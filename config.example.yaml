@@ -1,0 +1,68 @@
+# Copy to config.yaml (setup.sh does it) and fill in.
+
+ai:
+  # auto = first one found of: claude, gemini, codex, ollama
+  # All are free CLIs that use your own login / local model. No API keys.
+  backend: auto
+  claude_model: sonnet      # resume writing ("opus" = best but slower)
+  claude_fast_model: haiku  # form answers, keyword lists
+  ollama_model: llama3.1
+  timeout: 300
+
+# LinkedIn's PDF export often lacks phone etc. Anything set here overrides the profile.
+contact:
+  name: ""
+  email: ""
+  phone: ""
+  location: ""              # e.g. "Bengaluru, India"
+  links: []                 # e.g. ["linkedin.com/in/you", "github.com/you"]
+
+resume:
+  target_role: ""           # default role for `jobbot build`, e.g. "Backend Engineer"
+  accent_color: "#1F4E79"   # headings colour; keep it dark for print/ATS
+  pages: auto               # auto | 1 | 2
+  min_score: 85             # tailor loop tries to reach this ATS score
+  refine_passes: 1          # extra rewrite passes when below min_score (each ~30-60s)
+
+search:
+  keywords: ["Python Developer"]
+  location: "India"
+  remote_only: false
+  posted_within: 24h        # 30m | 1h | 6h | 24h | 3d | 1w ; fresh posts = fewer applicants
+  experience_levels: []     # LinkedIn: 1 intern, 2 entry, 3 associate, 4 mid-senior, 5 director
+  exclude_companies: []
+  exclude_title_words: ["principal", "staff", "director"]
+
+apply:
+  max_per_run: 10
+  parallel_resumes: 3       # AI workers tailoring resumes while the browser applies
+  min_skill_overlap: 2      # instant skip (no AI) only when almost none of your skills appear in the JD
+  min_fit: 40               # quick AI screen; only clearly different stacks score below this
+  min_match_score: 50       # skip only when even the tailored resume scores below this
+  delay_seconds: [20, 45]   # min gap between submits; overlaps with AI work so it costs little
+  follow_companies: false
+  headless: false
+
+# !!! EDIT THESE to your real numbers before a live run (the defaults below are placeholders) !!!
+# Answers for application-form questions, matched by words in the question.
+# Anything not matched here is answered by the AI from your profile (and cached in data/answers_cache.json,
+# which you can review and edit).
+answers:
+  - match: ["total experience", "years of experience", "years of work experience"]
+    answer: "2"
+  - match: ["notice period"]
+    answer: "30"
+  - match: ["current ctc", "current salary", "current compensation"]
+    answer: "6"            # in LPA (lakhs per annum); auto-converted when a form asks in rupees
+  - match: ["expected ctc", "expected salary", "expected compensation", "salary expectation"]
+    answer: "10"           # in LPA
+  - match: ["authorized to work", "authorised to work", "legally", "work authorization"]
+    answer: "Yes"
+  - match: ["sponsorship", "visa"]
+    answer: "No"
+  - match: ["relocate", "relocation"]
+    answer: "Yes"
+  - match: ["commute", "onsite", "on-site", "hybrid", "work from office"]
+    answer: "Yes"
+  - match: ["immediate joiner", "join immediately"]
+    answer: "No"

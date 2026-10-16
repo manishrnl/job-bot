@@ -1,0 +1,21 @@
+# Personal data: never commit
+config.yaml
+data/
+output/
+
+# Python / tooling
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Anything else that might hold a profile or resume
+*.pdf
+!docs/*.pdf

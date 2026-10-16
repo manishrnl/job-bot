@@ -1,0 +1,4 @@
+jb.cmd text eol=crlf
+setup.ps1 text eol=crlf
+*.sh text eol=lf
+jb text eol=lf
