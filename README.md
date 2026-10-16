@@ -48,14 +48,14 @@ Use `llama3.1:70b` or `qwen2.5:32b` if your machine can run them.
 ### macOS / Linux
 
 ```bash
-git clone https://github.com/<you>/jobbot.git && cd jobbot
+git clone https://github.com/mohit-uchit/jobbot.git && cd jobbot
 ./setup.sh                                  # venv + dependencies + headless Chromium for PDFs
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-git clone https://github.com/<you>/jobbot.git; cd jobbot
+git clone https://github.com/mohit-uchit/jobbot.git; cd jobbot
 powershell -ExecutionPolicy Bypass -File setup.ps1
 ```
 
