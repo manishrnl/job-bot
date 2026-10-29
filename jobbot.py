@@ -179,7 +179,13 @@ def cmd_login(a):
     from jobbot.browser import session
     url = LOGIN_URLS.get(a.site, a.site)
     with session(headless=False) as (pw, ctx, page):
-        page.goto(url)
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            raise SystemExit(
+                f"Could not reach {url}. Check your internet/DNS and try again. "
+                "If LinkedIn is blocked on this network, use a different connection or log in through a browser with working internet access."
+            ) from e
         input(f"Log in to {a.site} in the browser window (solve any captcha/OTP), then press Enter here... ")
     console.print("[green]Session saved.[/] You won't need to log in again until it expires.")
 
@@ -188,6 +194,11 @@ def cmd_use_chrome(a):
     import subprocess
     from jobbot.browser import chrome_profiles, import_chrome
     profs = chrome_profiles()
+    if not profs:
+        raise SystemExit(
+            "No Chrome profiles were found. Install or launch Chrome once, sign in, and retry. "
+            "If you use a different Chrome profile or browser, use './jb login linkedin' instead."
+        )
     t = Table("#", "Chrome profile", "Account")
     for i, (d, name, email) in enumerate(profs, 1):
         t.add_row(str(i), name, email or "-")

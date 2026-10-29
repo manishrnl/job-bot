@@ -2,8 +2,11 @@
 
 ai:
   # auto = first one found of: claude, gemini, codex, ollama
-  # All are free CLIs that use your own login / local model. No API keys.
-  backend: auto
+  # Use "api" for a third-party OpenAI-compatible provider like aicredits.in
+  backend: api
+  api_key: ""              # e.g. your token from https://aicredits.in/dashboard
+  api_base: "https://api.aicredits.in/v1"  # OpenAI-compatible base URL
+  api_model: "gemini-2.5-flash-lite" # cheapest Gemini family model where available
   claude_model: sonnet      # resume writing ("opus" = best but slower)
   claude_fast_model: haiku  # form answers, keyword lists
   ollama_model: llama3.1
@@ -25,7 +28,7 @@ resume:
   refine_passes: 1          # extra rewrite passes when below min_score (each ~30-60s)
 
 search:
-  keywords: ["Python Developer"]
+  keywords: ["Java Developer"]
   location: "India"
   remote_only: false
   posted_within: 24h        # 30m | 1h | 6h | 24h | 3d | 1w ; fresh posts = fewer applicants
@@ -49,13 +52,13 @@ apply:
 # which you can review and edit).
 answers:
   - match: ["total experience", "years of experience", "years of work experience"]
-    answer: "2"
+    answer: "0"
   - match: ["notice period"]
     answer: "30"
   - match: ["current ctc", "current salary", "current compensation"]
-    answer: "6"            # in LPA (lakhs per annum); auto-converted when a form asks in rupees
+    answer: "0"            # in LPA (lakhs per annum); auto-converted when a form asks in rupees
   - match: ["expected ctc", "expected salary", "expected compensation", "salary expectation"]
-    answer: "10"           # in LPA
+    answer: "3"           # in LPA
   - match: ["authorized to work", "authorised to work", "legally", "work authorization"]
     answer: "Yes"
   - match: ["sponsorship", "visa"]

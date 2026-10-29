@@ -65,19 +65,23 @@ On Windows, use `.\jb` (it runs `jb.cmd`) wherever this README says `./jb`.
 
 ```bash
 # 1. LinkedIn > your profile > More > Save to PDF. Then:
-./jb init ~/Downloads/Profile.pdf          # add an old resume too: ./jb init Profile.pdf old_cv.pdf
+.\jb init ~/Downloads/Profile.pdf          # add an old resume too: ./jb init Profile.pdf old_cv.pdf
                                            # it asks for anything the PDF lacks (phone, CTC, projects...)
+# If Ollama times out during PDF extraction, use a smaller/faster model or switch to Claude/Gemini:
+#   ollama pull llama3.1
+#   # or edit config.yaml: ai.backend: claude   / ai.ollama_model: llama3.1
+
 # 2. Check data/profile.json and config.yaml (CTC in LPA, notice period, job titles, location)
 
 # 3. Build a master resume
-./jb build --role "Backend Engineer"
+.\jb build --role "Backend Engineer"
 
 # 4. Give the bot a logged-in LinkedIn session (pick ONE):
-./jb use-chrome --profile "Your Chrome profile name"   # copy logins from your Chrome (quit Chrome first)
-./jb login linkedin                                   # or log in once in the bot's own browser
+# .\jb use-chrome --profile "Manish"   # copy logins from your Chrome (quit Chrome first)
+.\jb login linkedin                                   # or log in once in the bot's own browser
 
 # 5. Try it without submitting anything
-./jb apply linkedin --dry-run -n 3
+.\jb apply linkedin --dry-run -n 3
 ```
 
 ---
@@ -85,17 +89,17 @@ On Windows, use `.\jb` (it runs `jb.cmd`) wherever this README says `./jb`.
 ## Daily use
 
 ```bash
-./jb                                             # interactive menu
-./jb apply linkedin -n 10                        # apply to 10 jobs (filters from config.yaml)
-./jb apply linkedin -t 1h -n 10                  # only jobs posted in the last hour
-./jb apply linkedin -k "Node.js Developer" "Backend Engineer" -l "Bengaluru" -t 24h
-./jb apply url https://boards.greenhouse.io/x/jobs/1   # any other site: pre-fills, you click submit
-./jb tailor --url https://www.linkedin.com/jobs/view/123/   # resume only, for one job
-./jb tailor --jd jd.txt --company Acme --title "SDE 2"
-./jb score my_resume.pdf --jd jd.txt             # ATS score for any resume
-./jb stats                                       # applied total / today / avg score / last 14 days
-./jb history --status applied                    # applied jobs with links
-./jb clean                                       # delete old generated resumes, debug files, answer cache
+.\jb                                             # interactive menu
+.\jb apply linkedin -n 10                        # apply to 10 jobs (filters from config.yaml)
+.\jb apply linkedin -t 1h -n 10                  # only jobs posted in the last hour
+.\jb apply linkedin -k "Node.js Developer" "Backend Engineer" -l "Bengaluru" -t 24h
+.\jb apply url https://boards.greenhouse.io/x/jobs/1   # any other site: pre-fills, you click submit
+.\jb tailor --url https://www.linkedin.com/jobs/view/123/   # resume only, for one job
+.\jb tailor --jd jd.txt --company Acme --title "SDE 2"
+.\jb score my_resume.pdf --jd jd.txt             # ATS score for any resume
+.\jb stats                                       # applied total / today / avg score / last 14 days
+.\jb history --status applied                    # applied jobs with links
+.\jb clean                                       # delete old generated resumes, debug files, answer cache
 ```
 
 ### Commands

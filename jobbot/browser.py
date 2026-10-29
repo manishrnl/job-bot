@@ -45,7 +45,13 @@ SKIP = {"Cache", "Code Cache", "GPUCache", "DawnCache", "DawnGraphiteCache", "Da
 
 def chrome_profiles():
     """[(dir_name, display_name, account_email)] from your real Chrome."""
-    info = json.loads((CHROME_DIR / "Local State").read_text())["profile"]["info_cache"]
+    local_state = CHROME_DIR / "Local State"
+    if not local_state.exists():
+        return []
+    try:
+        info = json.loads(local_state.read_text())["profile"]["info_cache"]
+    except (KeyError, ValueError, OSError):
+        return []
     return [(d, v.get("name", ""), v.get("user_name", "")) for d, v in info.items()]
 
 
