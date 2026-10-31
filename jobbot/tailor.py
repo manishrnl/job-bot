@@ -113,8 +113,37 @@ PROFILE (the only source of truth):
     return resume, report
 
 
+def experience_gate(profile, jd):
+    """Reject jobs that require more than 2 years of experience for a 0-year candidate."""
+    text = compact_jd(jd, 4000).lower()
+    if not text:
+        return 100, "freshers/0-2y"
+
+    fresher_like = re.search(r"\b(freshers?|entry level|graduate|0\s*years?|0\s*[-to]+\s*2\s*years?|up to\s*2\s*years?)\b", text)
+
+    if re.search(r"\b(?:5|6|7|8|9|10|[1-9]\d+)\s*\+\s*years?\b|\b(?:5|6|7|8|9|10|[1-9]\d+)\s*years?\s*(?:minimum|required|and\s*above)\b|\b(?:minimum|min)\s*(?:5|6|7|8|9|10|[1-9]\d+)\s*years?\b", text):
+        if fresher_like:
+            return 100, "freshers/0-2y"
+        return 0, "requires 5+ years"
+    if re.search(r"\b(?:3|4)\s*\+\s*years?\b|\b(?:3|4)\s*years?\s*(?:minimum|required|and\s*above)\b|\b(?:minimum|min)\s*(?:3|4)\s*years?\b", text):
+        if fresher_like:
+            return 100, "freshers/0-2y"
+        return 0, "requires 3+ years"
+    if re.search(r"\b(?:2)\s*\+\s*years?\b|\b(?:2)\s*years?\s*(?:minimum|required)\b", text):
+        if fresher_like:
+            return 100, "freshers/0-2y"
+        return 0, "requires 2+ years"
+    if fresher_like:
+        return 100, "freshers/0-2y"
+    return 100, "freshers/0-2y"
+
+
 def fit_check(profile, jd, title=""):
     """Fast small-model screen (~5s) so we don't spend a full tailoring run on a job you can't get."""
+    gate = experience_gate(profile, jd)
+    if gate[0] == 0:
+        return gate
+
     brief = {k: profile.get(k) for k in ("headline", "skills")}
     brief["experience"] = [{k: e.get(k) for k in ("title", "company", "start", "end")} for e in profile.get("experience") or []]
     prompt = f"""Rate how well this candidate fits this job, 0-100, like a recruiter screening in 10 seconds.

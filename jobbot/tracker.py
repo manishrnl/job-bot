@@ -6,6 +6,8 @@ import sqlite3
 from .config import DATA
 
 COLS = ["platform", "job_id", "title", "company", "url", "status", "score", "fit", "resume", "note", "at"]
+RUNS_DIR = DATA / "runs"
+RUNS_DIR.mkdir(exist_ok=True)
 _db = sqlite3.connect(DATA / "jobs.db")
 _db.execute("""CREATE TABLE IF NOT EXISTS jobs (
   platform TEXT, job_id TEXT, title TEXT, company TEXT, url TEXT, status TEXT,
@@ -58,3 +60,39 @@ def export_csv():
         w = csv.writer(f)
         w.writerow(COLS)
         w.writerows(_db.execute(f"SELECT {','.join(COLS)} FROM jobs ORDER BY at DESC"))
+
+
+def write_run_summary(platform, submitted=0, dry_run=False, limit=None, counts=None):
+    """Write one timestamped CSV summary per run so you can measure real submissions."""
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = RUNS_DIR / f"{platform}_{stamp}_summary.csv"
+    counts = counts or {}
+    row = [
+        "platform",
+        "run_at",
+        "mode",
+        "limit",
+        "submitted",
+        "applied",
+        "dry_run",
+        "low_fit",
+        "low_match",
+        "error",
+    ]
+    data = [
+        platform,
+        datetime.datetime.now().isoformat(timespec="seconds"),
+        "dry_run" if dry_run else "live",
+        str(limit or ""),
+        str(submitted),
+        str(counts.get("applied", 0)),
+        str(counts.get("dry_run", 0)),
+        str(counts.get("low_fit", 0)),
+        str(counts.get("low_match", 0)),
+        str(counts.get("error", 0)),
+    ]
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(row)
+        w.writerow(data)
+    return path

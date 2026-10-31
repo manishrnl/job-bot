@@ -1,11 +1,15 @@
 import json
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from jobbot import ai
 from jobbot import browser
+from jobbot import render
+from jobbot import tailor
+from jobbot import tracker
 
 
 class TestAiOllama(unittest.TestCase):
@@ -98,6 +102,88 @@ class TestBrowser(unittest.TestCase):
     def test_chrome_profiles_missing_profile_dir_returns_empty(self):
         with mock.patch.object(browser, "CHROME_DIR", Path("/definitely/missing/chrome")):
             self.assertEqual(browser.chrome_profiles(), [])
+
+    def test_session_reports_locked_profile_actionably(self):
+        class FakeSyncPlaywright:
+            def __enter__(self):
+                return self
+            def __exit__(self, exc_type, exc, tb):
+                return False
+            class chromium:
+                @staticmethod
+                def launch_persistent_context(*args, **kwargs):
+                    raise RuntimeError("Opening in existing browser session. This usually means that the profile is already in use by another instance of Chromium.")
+
+        with mock.patch.object(browser, "CFG", {"apply": {"headless": False}}), \
+             mock.patch.object(browser, "sync_playwright", return_value=FakeSyncPlaywright()):
+            with self.assertRaisesRegex(SystemExit, r"Close all Chrome|Chromium|browser session|kill"):
+                with browser.session():
+                    pass
+
+
+class TestExperienceGate(unittest.TestCase):
+    def test_rejects_jobs_needing_more_than_two_years_for_fresher(self):
+        profile = {"headline": "Java Backend Developer", "experience": [], "skills": ["Java", "Spring Boot"]}
+        jd = "We need a Java Developer with 5+ years of experience in Spring Boot and Kafka."
+        self.assertEqual(tailor.experience_gate(profile, jd), (0, "requires 5+ years"))
+
+    def test_allows_fresher_jobs_up_to_two_years(self):
+        profile = {"headline": "Java Backend Developer", "experience": [], "skills": ["Java", "Spring Boot"]}
+        jd = "Freshers or candidates with up to 2 years of experience in Java and Spring Boot."
+        self.assertEqual(tailor.experience_gate(profile, jd), (100, "freshers/0-2y"))
+
+
+class TestRunArtifacts(unittest.TestCase):
+    def test_render_save_creates_timestamped_run_directory(self):
+        resume = {"name": "Manish Kumar", "experience": []}
+
+        def fake_pdf(_pw, _resume, path):
+            path.write_bytes(b"fake pdf")
+            return "<html>ok</html>"
+
+        with mock.patch.object(render, "_pdf", side_effect=fake_pdf), \
+             mock.patch.object(render.ats, "resume_text", return_value="resume text"):
+            pdf_path = render.save(resume, "master", pw=mock.Mock())
+        self.assertTrue(pdf_path.exists())
+        self.assertIn("Manish_master_", pdf_path.name)
+        self.assertEqual(pdf_path.parent, render.OUT)
+
+    def test_tracker_write_run_summary_creates_timestamped_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            with mock.patch.object(tracker, "DATA", tmp_path), \
+                 mock.patch.object(tracker, "RUNS_DIR", tmp_path / "runs"):
+                tracker.RUNS_DIR.mkdir(exist_ok=True)
+                tracker.write_run_summary("linkedin", submitted=2, dry_run=True, limit=3)
+                runs = list((tmp_path / "runs").glob("linkedin_*_summary.csv"))
+            self.assertEqual(len(runs), 1)
+            self.assertTrue(runs[0].exists())
+            self.assertIn("linkedin_", runs[0].name)
+
+
+class TestFormfillResumeUpload(unittest.TestCase):
+    def test_chooses_resume_file_input_over_cover_letter(self):
+        files = [
+            {"label": "Cover letter", "name": "cover_letter", "type": "file"},
+            {"label": "Upload resume", "name": "resume", "type": "file"},
+        ]
+        self.assertLess(formfill._resume_file_rank(files[0], files), 0)
+        self.assertGreater(formfill._resume_file_rank(files[1], files), 0)
+
+    def test_uses_single_file_input_as_fallback(self):
+        files = [{"label": "Portfolio", "name": "portfolio", "type": "file"}]
+        self.assertGreater(formfill._resume_file_rank(files[0], files), 0)
+
+    def test_uses_first_file_when_no_resume_hint_exists(self):
+        files = [
+            {"label": "Attachment 1", "name": "upload_1", "type": "file"},
+            {"label": "Attachment 2", "name": "upload_2", "type": "file"},
+        ]
+        self.assertEqual(formfill._resume_file_rank(files[0], files), 1)
+        self.assertEqual(formfill._resume_file_rank(files[1], files), 0)
+
+
+from jobbot import formfill
 
 
 if __name__ == "__main__":

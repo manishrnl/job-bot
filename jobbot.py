@@ -260,6 +260,7 @@ def cmd_apply(a):
         else:
             from jobbot.platforms import hirist as plat
         n = plat.apply(pw, page, p, keywords, location, limit, dry_run=a.dry_run)
+    tracker.write_run_summary(a.platform, submitted=n, dry_run=a.dry_run, limit=limit)
     console.print(f"\n[bold green]Done: {n} application(s) {'simulated' if a.dry_run else 'submitted'}.[/]")
 
 

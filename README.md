@@ -48,14 +48,14 @@ Use `llama3.1:70b` or `qwen2.5:32b` if your machine can run them.
 ### macOS / Linux
 
 ```bash
-git clone https://github.com/mohit-uchit/jobbot.git && cd jobbot
+git clone https://github.com/manishrnl/job-bot.git && cd jobbot
 ./setup.sh                                  # venv + dependencies + headless Chromium for PDFs
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-git clone https://github.com/mohit-uchit/jobbot.git; cd jobbot
+git clone https://github.com/manishrnl/job-bot.git; cd jobbot
 powershell -ExecutionPolicy Bypass -File setup.ps1
 ```
 
@@ -75,13 +75,14 @@ On Windows, use `.\jb` (it runs `jb.cmd`) wherever this README says `./jb`.
 
 # 3. Build a master resume
 .\jb build --role "Backend Engineer"
-
-# 4. Give the bot a logged-in LinkedIn session (pick ONE):
-# .\jb use-chrome --profile "Manish"   # copy logins from your Chrome (quit Chrome first)
-.\jb login linkedin                                   # or log in once in the bot's own browser
+.\jb use-chrome --profile "Manish"   # copy logins from your Chrome (quit Chrome first)
+.\jb login linkedin                  # or log in once in the bot's own browser
+.\jb apply linkedin -n 20
 
 # 5. Try it without submitting anything
-.\jb apply linkedin --dry-run -n 3
+# .\jb apply linkedin --dry-run -n 3
+
+# -n = “maximum number of applications in this run.” So -n 5 means “do not exceed 5 applications during this round.”
 ```
 
 ---

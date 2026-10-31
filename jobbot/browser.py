@@ -13,6 +13,16 @@ from playwright.sync_api import sync_playwright
 from .config import BROWSER_DIR, CFG
 
 
+def _browser_locked_error(exc):
+    msg = str(exc).lower()
+    return (
+        "opening in existing browser session" in msg or
+        "already in use by another instance of chromium" in msg or
+        "profile is already in use" in msg or
+        "browser session" in msg
+    )
+
+
 @contextmanager
 def session(headless=None):
     headless = CFG["apply"].get("headless", False) if headless is None else headless
@@ -24,8 +34,23 @@ def session(headless=None):
                   args=["--start-maximized", "--disable-blink-features=AutomationControlled"])
         try:
             ctx = pw.chromium.launch_persistent_context(channel="chrome", **kw)  # your installed Chrome
-        except Exception:
-            ctx = pw.chromium.launch_persistent_context(**kw)  # bundled Chromium fallback
+        except Exception as exc:
+            if _browser_locked_error(exc):
+                raise SystemExit(
+                    "Chrome/Chromium is already open and its profile is locked. "
+                    "Close all Chrome/Chromium windows, then stop any lingering browser processes and rerun the command. "
+                    "If you want to keep Chrome open, log in with a separate browser profile or use './jb login linkedin' in a fresh session."
+                ) from exc
+            try:
+                ctx = pw.chromium.launch_persistent_context(**kw)  # bundled Chromium fallback
+            except Exception as fallback_exc:
+                if _browser_locked_error(fallback_exc):
+                    raise SystemExit(
+                        "Chrome/Chromium is already open and its profile is locked. "
+                        "Close all Chrome/Chromium windows, then stop any lingering browser processes and rerun the command. "
+                        "If you want to keep Chrome open, log in with a separate browser profile or use './jb login linkedin' in a fresh session."
+                    ) from fallback_exc
+                raise
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
             yield pw, ctx, page

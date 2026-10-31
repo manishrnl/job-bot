@@ -148,18 +148,20 @@ def ats_years(resume):
 
 
 def save(resume, name_hint="", pw=None):
-    """Write PDF + TXT + HTML to output/. `pw` = an already-running sync Playwright instance (optional)."""
-    stamp = datetime.date.today().isoformat()
-    base = OUT / f"{slug(resume.get('name', '').split(' ')[0], name_hint)}_{stamp}"
-    pdf = base.with_suffix(".pdf")
-    base.with_suffix(".txt").write_text(ats.resume_text(resume))
+    """Write PDF + TXT + HTML directly under output/ using timestamped filenames."""
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stem = slug(resume.get('name', '').split(' ')[0], name_hint)
+    pdf = OUT / f"{stem}_{stamp}.pdf"
+    txt = OUT / f"{stem}_{stamp}.txt"
+    html_path = OUT / f"{stem}_{stamp}.html"
+    txt.write_text(ats.resume_text(resume))
     if pw is None:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
             doc = _pdf(p, resume, pdf)
     else:
         doc = _pdf(pw, resume, pdf)
-    base.with_suffix(".html").write_text(doc)
+    html_path.write_text(doc)
     return pdf
 
 

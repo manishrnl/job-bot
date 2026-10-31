@@ -46,10 +46,14 @@ SCAN_JS = r"""
   };
   root.querySelectorAll('[data-jb]').forEach(e => e.removeAttribute('data-jb'));
   const out = []; let n = 0;
+  const fileInputs = [...root.querySelectorAll('input[type="file"]')];
   root.querySelectorAll('input, textarea, select').forEach(el => {
     const type = (el.type || '').toLowerCase();
     if (['hidden', 'submit', 'button', 'search', 'radio', 'checkbox', 'image', 'reset'].includes(type)) return;
+    const resumeHint = type === 'file' ? [labelOf(el), el.name || el.id || '', el.getAttribute('aria-label') || '', el.getAttribute('placeholder') || ''].join(' ') : '';
+    const resumeLike = type === 'file' && (/resume|cv|curriculum/i.test(resumeHint) || fileInputs.length === 1);
     if (type !== 'file' && (!vis(el) || el.disabled || el.readOnly)) return;
+    if (type === 'file' && !resumeLike && !vis(el)) return;
     const tag = el.tagName.toLowerCase();
     const key = String(++n); el.setAttribute('data-jb', key);
     out.push({ key, kind: tag === 'select' ? 'select' : type === 'file' ? 'file' : tag === 'textarea' ? 'textarea' : 'text',
@@ -94,6 +98,29 @@ NUMERIC_HINT = re.compile(r"how many|years|number of|ctc|salary|notice period|in
 RESUME_HINT = re.compile(r"resume|cv|curriculum", re.I)
 
 
+def _resume_file_rank(f, files):
+    """Return a score for whether this file input is the actual resume uploader.
+
+    The order matters: a lone upload field should still be treated as the résumé even if its label is
+    generic or misleading. For multi-file forms, we prefer explicit resume labels, then a first-file
+    fallback only when nothing clearer is available.
+    """
+    if len(files) == 1:
+        return 10
+    hint = " ".join([
+        f.get("label", ""),
+        f.get("name", ""),
+        f.get("type", ""),
+    ])
+    if re.search(r"cover|letter", hint, re.I):
+        return -100
+    if re.search(r"photo|image|portfolio|video|audio", hint, re.I):
+        return -50
+    if RESUME_HINT.search(hint):
+        return 100
+    return 1 if f is files[0] else 0
+
+
 def fill(scope, resume_pdf, log=print):
     """scope: a Playwright Locator (e.g. a modal) or a Page/Frame. Returns number of fields touched."""
     container = scope if isinstance(scope, Locator) else scope.locator("body")
@@ -115,12 +142,34 @@ def _el(scope, key):
 def _fill_one(scope, f, files, resume_pdf, log):
     kind, label = f["kind"], f.get("label", "")
     if kind == "file":
-        hint = label + " " + f.get("name", "")
-        if RESUME_HINT.search(hint) or (len(files) == 1 and not re.search(r"cover|photo|image", hint, re.I)):
-            _el(scope, f["key"]).set_input_files(str(resume_pdf))
-            log(f"  uploaded resume -> {label[:40] or 'file input'}")
-            return 1
-        return 0
+        if _resume_file_rank(f, files) <= 0:
+            return 0
+        el = _el(scope, f["key"])
+        log(f"  [yellow]uploading generated resume: {resume_pdf}[/]")
+        before = el.evaluate("(node) => ({ name: node.name, files: node.files ? Array.from(node.files).map(f => f.name) : [], value: node.value || '' })")
+        log(f"  [dim]resume input before: {before}[/]")
+        try:
+            el.evaluate("""
+            (node) => {
+              try { node.value = ''; } catch (e) {}
+              try { node.files = []; } catch (e) {}
+              try { const dt = new DataTransfer(); node.files = dt.files; } catch (e) {}
+            }
+            """)
+            el.set_input_files(str(resume_pdf))
+            el.evaluate("(node) => node.dispatchEvent(new Event('change', { bubbles: true }))")
+        except Exception:
+            try:
+                el.evaluate("(node) => node.setAttribute('value', '')")
+                el.set_input_files(str(resume_pdf))
+                el.evaluate("(node) => node.dispatchEvent(new Event('change', { bubbles: true }))")
+            except Exception:
+                el.evaluate(f"(node) => node.files = ['{str(resume_pdf).replace('\\', '\\\\')}']")
+                el.evaluate("(node) => node.dispatchEvent(new Event('change', { bubbles: true }))")
+        after = el.evaluate("(node) => ({ name: node.name, files: node.files ? Array.from(node.files).map(f => f.name) : [], value: node.value || '' })")
+        log(f"  [dim]resume input after: {after}[/]")
+        log(f"  uploaded resume -> {label[:40] or 'file input'}")
+        return 1
     if kind in ("text", "textarea"):
         if f["value"].strip():
             return 0

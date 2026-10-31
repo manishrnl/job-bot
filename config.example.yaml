@@ -1,4 +1,5 @@
 # Copy to config.yaml (setup.sh does it) and fill in.
+# Keep this as a safe example file: no API key and no personal data.
 
 ai:
   # auto = first one found of: claude, gemini, codex, ollama
@@ -21,51 +22,101 @@ contact:
   links: []                 # e.g. ["linkedin.com/in/you", "github.com/you"]
 
 resume:
-  target_role: ""           # default role for `jobbot build`, e.g. "Backend Engineer"
+  target_role: "Backend Engineer"  # default role for `jobbot build`
   accent_color: "#1F4E79"   # headings colour; keep it dark for print/ATS
   pages: auto               # auto | 1 | 2
   min_score: 85             # tailor loop tries to reach this ATS score
   refine_passes: 1          # extra rewrite passes when below min_score (each ~30-60s)
 
 search:
-  keywords: ["Java Developer"]
+  keywords:
+    - "TCS Java Developer"
+    - "Infosys Java Developer"
+    - "Capgemini Java Developer"
+    - "Cognizant Java Developer"
+    - "Wipro Java Developer"
+    - "LTIMindtree Java Developer"
+    - "HCLTech Java Developer"
+    - "Java Backend Developer"
+    - "Java Developer"
+    - "Backend Engineer"
+    - "Spring Boot Developer"
+    - "Java API Developer"
+    - "Microservices Developer"
+    - "Java Full Stack Developer"
+    - "Java Software Engineer"
   location: "India"
   remote_only: false
-  posted_within: 24h        # 30m | 1h | 6h | 24h | 3d | 1w ; fresh posts = fewer applicants
-  experience_levels: []     # LinkedIn: 1 intern, 2 entry, 3 associate, 4 mid-senior, 5 director
+  posted_within: 7d
+  experience_levels:
+    - 1
+    - 2
   exclude_companies: []
-  exclude_title_words: ["principal", "staff", "director"]
+  exclude_title_words:
+    - principal
+    - staff
+    - director
+    - architect
+    - senior
+    - lead
+    - manager
+    - vp
 
 apply:
-  max_per_run: 10
-  parallel_resumes: 3       # AI workers tailoring resumes while the browser applies
-  min_skill_overlap: 2      # instant skip (no AI) only when almost none of your skills appear in the JD
-  min_fit: 40               # quick AI screen; only clearly different stacks score below this
-  min_match_score: 50       # skip only when even the tailored resume scores below this
-  delay_seconds: [20, 45]   # min gap between submits; overlaps with AI work so it costs little
+  max_per_run: 5
+  parallel_resumes: 2
+  min_skill_overlap: 2
+  min_fit: 35
+  min_match_score: 45
+  delay_seconds:
+    - 25
+    - 55
   follow_companies: false
   headless: false
 
-# !!! EDIT THESE to your real numbers before a live run (the defaults below are placeholders) !!!
 # Answers for application-form questions, matched by words in the question.
-# Anything not matched here is answered by the AI from your profile (and cached in data/answers_cache.json,
-# which you can review and edit).
 answers:
-  - match: ["total experience", "years of experience", "years of work experience"]
+  - match:
+      - total experience
+      - years of experience
+      - years of work experience
     answer: "0"
-  - match: ["notice period"]
+  - match:
+      - notice period
     answer: "30"
-  - match: ["current ctc", "current salary", "current compensation"]
-    answer: "0"            # in LPA (lakhs per annum); auto-converted when a form asks in rupees
-  - match: ["expected ctc", "expected salary", "expected compensation", "salary expectation"]
-    answer: "3"           # in LPA
-  - match: ["authorized to work", "authorised to work", "legally", "work authorization"]
+  - match:
+      - current ctc
+      - current salary
+      - current compensation
+    answer: "0"
+  - match:
+      - expected ctc
+      - expected salary
+      - expected compensation
+      - salary expectation
+    answer: "300000"
+  - match:
+      - authorized to work
+      - authorised to work
+      - legally
+      - work authorization
     answer: "Yes"
-  - match: ["sponsorship", "visa"]
+  - match:
+      - sponsorship
+      - visa
     answer: "No"
-  - match: ["relocate", "relocation"]
+  - match:
+      - relocate
+      - relocation
     answer: "Yes"
-  - match: ["commute", "onsite", "on-site", "hybrid", "work from office"]
+  - match:
+      - commute
+      - onsite
+      - on-site
+      - hybrid
+      - work from office
     answer: "Yes"
-  - match: ["immediate joiner", "join immediately"]
+  - match:
+      - immediate joiner
+      - join immediately
     answer: "No"
