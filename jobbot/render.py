@@ -165,6 +165,26 @@ def save(resume, name_hint="", pw=None):
     return pdf
 
 
+def save_cover_letter(text, name_hint="", pw=None):
+    """Write a readable PDF copy of a generated cover letter under output/."""
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    stem = slug("cover_letter", name_hint)
+    pdf = OUT / f"{stem}_{stamp}.pdf"
+    paragraphs = "".join(f"<p>{_e(line)}</p>" for line in text.splitlines() if line.strip())
+    doc = ("<html><head><meta charset='utf-8'><style>"
+           "body{font-family:Calibri,'Segoe UI',Arial,sans-serif;color:#1a1a1a;font-size:11pt;"
+           "line-height:1.5;margin:25mm 22mm}p{margin:0 0 12pt;white-space:pre-wrap}"
+           "</style></head><body>" + paragraphs + "</body></html>")
+    if pw is None:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            _document_pdf(p, doc, pdf)
+    else:
+        _document_pdf(pw, doc, pdf)
+    pdf.with_suffix(".txt").write_text(text, encoding="utf-8")
+    return pdf
+
+
 _browsers = {}  # one headless browser per Playwright instance, reused across resumes
 
 
@@ -199,5 +219,18 @@ def _pdf(pw, resume, path):
                  margin={"top": f"{MARGIN_MM[0]}mm", "bottom": f"{MARGIN_MM[0]}mm",
                          "left": f"{MARGIN_MM[1]}mm", "right": f"{MARGIN_MM[1]}mm"})
         return doc
+    finally:
+        page.close()
+
+
+def _document_pdf(pw, doc, path):
+    browser = _browsers.get(id(pw))
+    if browser is None or not browser.is_connected():
+        browser = _browsers[id(pw)] = pw.chromium.launch(headless=True)
+    page = browser.new_page()
+    try:
+        page.set_content(doc, wait_until="load")
+        page.pdf(path=str(path), format="A4", print_background=True,
+                 margin={"top": "18mm", "bottom": "18mm", "left": "20mm", "right": "20mm"})
     finally:
         page.close()

@@ -12,7 +12,7 @@ import re
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
-from .. import answers, ats, formfill, render, tailor, tracker
+from .. import answers, ats, coverletter, formfill, render, tailor, tracker
 from ..browser import pause
 from ..config import CFG, DATA
 from ..pipeline import console, report_table
@@ -98,6 +98,7 @@ def prepare(profile, job):
     if fit < CFG["apply"].get("min_fit", 55):
         return job
     job["resume"], job["report"] = tailor.tailor(profile, job["jd"], job["title"], job["company"])
+    job["cover_letter"] = coverletter.write(profile, job["jd"], job["title"], job["company"])
     return job
 
 
@@ -159,11 +160,22 @@ def dump(page, jid, why):
     console.print(f"  [dim]debug saved: data/debug/{jid}.png ({why})[/]")
 
 
-def run_easy_apply(page, m, resume_pdf, dry_run, log):
+def run_easy_apply(page, m, resume_pdf, cover_letter_pdf, dry_run, log):
     stuck, last_sig = 0, None
+    resume_uploaded = cover_letter_uploaded = cover_letter_field_seen = False
     for _ in range(15):
         pause(0.6, 1.2)
-        formfill.fill(m, resume_pdf, log=log)
+        cover_letter_field_seen |= formfill.has_file_field(m, "cover_letter")
+        if not resume_uploaded and not formfill.has_file_field(m, "resume"):
+            resume_uploaded |= formfill.upload_via_button(m, "resume", resume_pdf, log=log)
+        if not cover_letter_uploaded and not formfill.has_file_field(m, "cover_letter"):
+            cover_letter_uploaded |= formfill.upload_via_button(m, "cover_letter", cover_letter_pdf, log=log)
+        uploaded = {}
+        formfill.fill(m, resume_pdf, cover_letter_pdf, log=log, uploaded=uploaded)
+        resume_uploaded |= uploaded.get("resume", False)
+        cover_letter_uploaded |= uploaded.get("cover_letter", False)
+        resume_uploaded |= formfill.has_uploaded_file(m, resume_pdf)
+        cover_letter_uploaded |= formfill.has_uploaded_file(m, cover_letter_pdf)
         if not CFG["apply"].get("follow_companies"):
             cb = m.locator("#follow-company-checkbox")
             if cb.count() and cb.is_checked():
@@ -171,6 +183,12 @@ def run_easy_apply(page, m, resume_pdf, dry_run, log):
 
         submit = m.get_by_role("button", name=re.compile(r"submit application", re.I))
         if submit.count() and submit.first.is_visible():
+            if not resume_uploaded:
+                log("  [red]LinkedIn still has no confirmed job-specific resume upload; refusing to submit[/]")
+                return "stuck"
+            if cover_letter_field_seen and not cover_letter_uploaded:
+                log("  [red]LinkedIn cover letter upload was not confirmed; refusing to submit[/]")
+                return "stuck"
             if dry_run:
                 log("  [cyan]dry run: reached Submit, discarding[/]")
                 discard(page)
@@ -201,9 +219,11 @@ def run_easy_apply(page, m, resume_pdf, dry_run, log):
 def apply_job(pw, page, profile, job, dry_run):
     resume, rep = job["resume"], job["report"]
     pdf = render.save(resume, render.slug(job["company"], job["title"]), pw=pw)
-    pdf.with_suffix(".json").write_text(json.dumps({"job": {k: v for k, v in job.items() if k not in ("resume", "report")},
+    cover_pdf = render.save_cover_letter(job["cover_letter"], render.slug(job["company"], job["title"]), pw=pw)
+    pdf.with_suffix(".json").write_text(json.dumps({"job": {k: v for k, v in job.items() if k not in ("resume", "report", "cover_letter")},
                                                     "resume": resume, "report": rep}, indent=2, ensure_ascii=False))
     job["pdf"] = pdf
+    job["cover_letter_pdf"] = cover_pdf
     answers.set_context(profile, job["title"], job["company"], job["jd"])
 
     page.goto(job["url"], wait_until="domcontentloaded")
@@ -227,7 +247,7 @@ def apply_job(pw, page, profile, job, dry_run):
     if m is None:
         dump(page, job["id"], "apply form not found")
         return "error", "apply form not found"
-    status = run_easy_apply(page, m, pdf, dry_run, console.print)
+    status = run_easy_apply(page, m, pdf, cover_pdf, dry_run, console.print)
     if status == "stuck":
         dump(page, job["id"], "stuck")
         discard(page)

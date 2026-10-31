@@ -77,7 +77,7 @@ On Windows, use `.\jb` (it runs `jb.cmd`) wherever this README says `./jb`.
 .\jb build --role "Backend Engineer"
 .\jb use-chrome --profile "Manish"   # copy logins from your Chrome (quit Chrome first)
 .\jb login linkedin                  # or log in once in the bot's own browser
-.\jb apply linkedin -n 20
+.\jb apply linkedin -n 1
 
 # 5. Try it without submitting anything
 # .\jb apply linkedin --dry-run -n 3

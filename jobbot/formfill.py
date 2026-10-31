@@ -1,7 +1,7 @@
 """Generic form filler: works on LinkedIn Easy Apply modals, Hirist, Greenhouse, Lever, Workable, etc.
 
 Scans a container for inputs/selects/radios, answers each unfilled one via answers.answer(),
-and uploads the tailored resume into resume file inputs. Never clicks submit.
+and uploads the tailored resume and cover letter into their matching file inputs. Never clicks submit.
 """
 import re
 
@@ -46,14 +46,12 @@ SCAN_JS = r"""
   };
   root.querySelectorAll('[data-jb]').forEach(e => e.removeAttribute('data-jb'));
   const out = []; let n = 0;
-  const fileInputs = [...root.querySelectorAll('input[type="file"]')];
   root.querySelectorAll('input, textarea, select').forEach(el => {
     const type = (el.type || '').toLowerCase();
     if (['hidden', 'submit', 'button', 'search', 'radio', 'checkbox', 'image', 'reset'].includes(type)) return;
-    const resumeHint = type === 'file' ? [labelOf(el), el.name || el.id || '', el.getAttribute('aria-label') || '', el.getAttribute('placeholder') || ''].join(' ') : '';
-    const resumeLike = type === 'file' && (/resume|cv|curriculum/i.test(resumeHint) || fileInputs.length === 1);
     if (type !== 'file' && (!vis(el) || el.disabled || el.readOnly)) return;
-    if (type === 'file' && !resumeLike && !vis(el)) return;
+    // Upload controls are commonly hidden behind a visible LinkedIn button. Keep hidden file
+    // inputs in the scan; Playwright can attach to them directly and the caller verifies the file.
     const tag = el.tagName.toLowerCase();
     const key = String(++n); el.setAttribute('data-jb', key);
     out.push({ key, kind: tag === 'select' ? 'select' : type === 'file' ? 'file' : tag === 'textarea' ? 'textarea' : 'text',
@@ -96,6 +94,7 @@ SCAN_JS = r"""
 NUMERIC_HINT = re.compile(r"how many|years|number of|ctc|salary|notice period|in days|in months|lpa|percentage|cgpa|gpa"
                           r"|rate yourself|out of (5|10)|on a scale", re.I)
 RESUME_HINT = re.compile(r"resume|cv|curriculum", re.I)
+COVER_HINT = re.compile(r"cover|letter", re.I)
 
 
 def _resume_file_rank(f, files):
@@ -121,7 +120,15 @@ def _resume_file_rank(f, files):
     return 1 if f is files[0] else 0
 
 
-def fill(scope, resume_pdf, log=print):
+def _cover_file_rank(f, files):
+    """Rank an explicit cover-letter uploader; never use a generic field as fallback."""
+    hint = " ".join([f.get("label", ""), f.get("name", ""), f.get("type", "")])
+    if COVER_HINT.search(hint):
+        return 100
+    return 0
+
+
+def fill(scope, resume_pdf, cover_letter_pdf=None, log=print, uploaded=None):
     """scope: a Playwright Locator (e.g. a modal) or a Page/Frame. Returns number of fields touched."""
     container = scope if isinstance(scope, Locator) else scope.locator("body")
     fields = container.evaluate(SCAN_JS)
@@ -129,8 +136,13 @@ def fill(scope, resume_pdf, log=print):
     files = [f for f in fields if f["kind"] == "file"]
     for f in fields:
         try:
-            touched += _fill_one(scope, f, files, resume_pdf, log)
+            touched += _fill_one(scope, f, files, resume_pdf, cover_letter_pdf, log, uploaded)
         except Exception as e:  # one stubborn field shouldn't kill the whole application
+            if f["kind"] == "file" and (
+                _cover_file_rank(f, files) > 0 and cover_letter_pdf
+                or _resume_file_rank(f, files) > 0
+            ):
+                raise RuntimeError(f"Could not attach {f.get('label', 'application document')}: {e}") from e
             log(f"  [dim]could not fill '{f.get('label', '')[:50]}': {str(e).splitlines()[0][:80]}[/dim]")
     return touched
 
@@ -139,15 +151,60 @@ def _el(scope, key):
     return scope.locator(f"[data-jb='{key}']").first
 
 
-def _fill_one(scope, f, files, resume_pdf, log):
+def has_uploaded_file(scope, path):
+    """True only when the requested local filename is present in a file input's FileList."""
+    inputs = scope.locator("input[type='file']")
+    for i in range(inputs.count()):
+        try:
+            names = inputs.nth(i).evaluate("node => Array.from(node.files || []).map(file => file.name)")
+            if path.name in names:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def has_file_field(scope, kind):
+    """Whether this form step exposes a recognized resume or cover-letter file field."""
+    container = scope if isinstance(scope, Locator) else scope.locator("body")
+    fields = container.evaluate(SCAN_JS)
+    files = [f for f in fields if f["kind"] == "file"]
+    if kind == "cover_letter":
+        return any(_cover_file_rank(f, files) > 0 for f in files)
+    return any(_resume_file_rank(f, files) > 0 and _cover_file_rank(f, files) <= 0 for f in files)
+
+
+def upload_via_button(scope, kind, path, log=print):
+    """Use LinkedIn's visible Upload resume control when it has not mounted a file input yet."""
+    pattern = (re.compile(r"(?:upload|attach).*cover.?letter", re.I) if kind == "cover_letter"
+               else re.compile(r"upload\s+(?:a\s+)?(?:resume|cv)", re.I))
+    buttons = scope.get_by_role("button", name=pattern)
+    if not buttons.count():
+        buttons = scope.get_by_text(pattern)
+    if not buttons.count():
+        return False
+    try:
+        with scope.page.expect_file_chooser(timeout=3000) as chooser_info:
+            buttons.first.click(timeout=3000)
+        chooser_info.value.set_files(str(path))
+        log(f"  [yellow]uploaded generated {kind.replace('_', ' ')} through LinkedIn chooser: {path}[/]")
+        return True
+    except Exception as e:
+        log(f"  [dim]LinkedIn upload control did not accept {kind.replace('_', ' ')}: {str(e).splitlines()[0][:100]}[/]")
+        return False
+
+
+def _fill_one(scope, f, files, resume_pdf, cover_letter_pdf, log, uploaded=None):
     kind, label = f["kind"], f.get("label", "")
     if kind == "file":
-        if _resume_file_rank(f, files) <= 0:
+        cover_rank = _cover_file_rank(f, files)
+        resume_rank = _resume_file_rank(f, files)
+        upload_path = cover_letter_pdf if cover_rank > 0 else resume_pdf if resume_rank > 0 else None
+        if not upload_path:
             return 0
         el = _el(scope, f["key"])
-        log(f"  [yellow]uploading generated resume: {resume_pdf}[/]")
-        before = el.evaluate("(node) => ({ name: node.name, files: node.files ? Array.from(node.files).map(f => f.name) : [], value: node.value || '' })")
-        log(f"  [dim]resume input before: {before}[/]")
+        kind_name = "cover letter" if cover_rank > 0 else "resume"
+        log(f"  [yellow]uploading generated {kind_name}: {upload_path}[/]")
         try:
             el.evaluate("""
             (node) => {
@@ -156,19 +213,21 @@ def _fill_one(scope, f, files, resume_pdf, log):
               try { const dt = new DataTransfer(); node.files = dt.files; } catch (e) {}
             }
             """)
-            el.set_input_files(str(resume_pdf))
+            el.set_input_files(str(upload_path))
             el.evaluate("(node) => node.dispatchEvent(new Event('change', { bubbles: true }))")
         except Exception:
             try:
                 el.evaluate("(node) => node.setAttribute('value', '')")
-                el.set_input_files(str(resume_pdf))
+                el.set_input_files(str(upload_path))
                 el.evaluate("(node) => node.dispatchEvent(new Event('change', { bubbles: true }))")
             except Exception:
-                el.evaluate(f"(node) => node.files = ['{str(resume_pdf).replace('\\', '\\\\')}']")
-                el.evaluate("(node) => node.dispatchEvent(new Event('change', { bubbles: true }))")
-        after = el.evaluate("(node) => ({ name: node.name, files: node.files ? Array.from(node.files).map(f => f.name) : [], value: node.value || '' })")
-        log(f"  [dim]resume input after: {after}[/]")
-        log(f"  uploaded resume -> {label[:40] or 'file input'}")
+                raise
+        after = el.evaluate("(node) => node.files ? Array.from(node.files).map(f => f.name) : []")
+        if not after or str(upload_path.name) not in after:
+            raise RuntimeError(f"{kind_name} was not attached")
+        if uploaded is not None:
+            uploaded["cover_letter" if cover_rank > 0 else "resume"] = True
+        log(f"  uploaded {kind_name} -> {label[:40] or 'file input'}")
         return 1
     if kind in ("text", "textarea"):
         if f["value"].strip():
