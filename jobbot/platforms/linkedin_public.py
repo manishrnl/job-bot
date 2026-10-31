@@ -5,33 +5,54 @@ Only the actual Easy Apply step needs the logged-in browser.
 """
 import html
 import re
+import socket
+import ssl
 import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from rich.console import Console
 
 from ..config import CFG
 
 GUEST = "https://www.linkedin.com/jobs-guest/jobs/api"
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/155.0 Safari/537.36")
+console = Console(stderr=True)
+_retry_after = 0.0
 
 
-def _get(url, tries=4):
+def _get(url, tries=None):
+    global _retry_after
+    search_cfg = CFG.get("search", {})
+    tries = max(1, int(tries or search_cfg.get("request_retries", 3)))
+    timeout = max(1, float(search_cfg.get("request_timeout_seconds", 15)))
+    if time.monotonic() < _retry_after:
+        return ""
     for i in range(tries):
         req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9"})
         try:
-            with urllib.request.urlopen(req, timeout=20) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             if e.code in (429, 999) or e.code >= 500:  # rate limited: back off
-                time.sleep(3 * (i + 1))
+                if i + 1 < tries:
+                    time.sleep(min(2 * (i + 1), 6))
                 continue
-            if e.code == 400:
-                return ""
-            raise
-        except urllib.error.URLError:
-            time.sleep(2 * (i + 1))
+            console.print(f"[yellow]LinkedIn public jobs endpoint returned HTTP {e.code}; skipping this request.[/]")
+            return ""
+        except (urllib.error.URLError, TimeoutError, socket.timeout, ssl.SSLError, OSError) as exc:
+            if i + 1 < tries:
+                time.sleep(min(2 * (i + 1), 6))
+                continue
+            _retry_after = time.monotonic() + 30
+            console.print(f"[yellow]LinkedIn public jobs endpoint is unavailable ({type(exc).__name__}: {exc}). "
+                          "Skipping this request and cooling down before retrying.[/]")
+            return ""
+        if i + 1 == tries:
+            _retry_after = time.monotonic() + 30
+            console.print("[yellow]LinkedIn public search is temporarily unavailable or rate limited. "
+                          "Skipping this request and cooling down before retrying.[/]")
     return ""
 
 

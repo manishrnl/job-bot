@@ -48,6 +48,8 @@ search:
   location: "India"
   remote_only: false
   posted_within: 7d
+  request_timeout_seconds: 15 # per LinkedIn public-search request
+  request_retries: 3          # transient timeouts/network errors before skipping the request
   experience_levels:
     - 1
     - 2

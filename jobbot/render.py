@@ -10,6 +10,7 @@ import datetime
 import math
 import re
 from html import escape
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from . import ats
 from .config import CFG, OUT
@@ -49,11 +50,77 @@ ul {{ margin: 2px 0 {gap * 0.45:.1f}px 0; padding-left: 15px; }} li {{ margin: {
 .item {{ break-inside: avoid; page-break-inside: avoid; }}
 .skills div {{ margin: {li}px 0; }} .skills b {{ color: #222; }}
 p {{ margin: 2px 0; }} .muted {{ color: #444; }}
+a {{ color: {accent}; text-decoration: underline; }}
 """
 
 
 def _e(s):
     return escape(str(s or ""))
+
+
+def _url_href(url):
+    """Use HTTPS and www for root domains; retain required service subdomains such as Netlify."""
+    value = str(url or "").strip()
+    if not value:
+        return ""
+    if re.match(r"^(?:mailto:|tel:)", value, re.I):
+        return value
+    if value.startswith("//"):
+        value = "https:" + value
+    elif not re.match(r"^https?://", value, re.I):
+        value = "https://" + value.lstrip("/")
+    parsed = urlsplit(value)
+    host = parsed.hostname or ""
+    # www is valid for apex domains. For actual subdomains (e.g. Netlify app URLs), adding
+    # another www label changes the host and breaks the destination.
+    if host and not host.lower().startswith("www.") and host.count(".") == 1:
+        host = "www." + host
+    netloc = host
+    if parsed.port:
+        netloc += f":{parsed.port}"
+    return urlunsplit(("https", netloc, parsed.path, parsed.query, parsed.fragment))
+
+
+def _link(url, label=None):
+    href = _url_href(url)
+    visible = str(label if label is not None else href or "")
+    if not url:
+        return _e(visible)
+    if href.lower().startswith(("mailto:", "tel:")):
+        return f"<a href='{_e(href)}'>{_e(visible)}</a>"
+    return f"<a href='{_e(href)}' target='_blank' rel='noopener noreferrer'>{_e(visible)}</a>"
+
+
+def _contact_link_label(url):
+    host = (urlsplit(_url_href(url)).hostname or "").lower()
+    if "linkedin.com" in host:
+        return "LinkedIn"
+    if "github.com" in host:
+        return "GitHub"
+    if "instagram.com" in host:
+        return "Instagram"
+    if host.endswith("manishrnl.in"):
+        return "Portfolio"
+    return host.removeprefix("www.") or str(url)
+
+
+_URL_IN_TEXT = re.compile(r"(?i)(?:https?://|www\.)[^\s<>]+|(?<![@\w])(?:[\w-]+\.)+(?:com|org|net|io|dev|app|edu|gov|in|me|co)(?:/[^\s<>]*)?")
+
+
+def _linkify(text):
+    """Make literal URLs in certificate/details text clickable without rewriting their labels."""
+    value = str(text or "")
+    out, pos = [], 0
+    for match in _URL_IN_TEXT.finditer(value):
+        raw = match.group(0).rstrip(".,;:!?)]]}")
+        if not raw:
+            continue
+        end = match.start() + len(raw)
+        out.append(_e(value[pos:match.start()]))
+        out.append(_link(raw))
+        pos = end
+    out.append(_e(value[pos:]))
+    return "".join(out)
 
 
 def _dates(x):
@@ -71,23 +138,31 @@ def _section(title, items, keep_all=False):
 
 
 def _entry(head, bullets):
-    lis = "".join(f"<li>{_e(b)}</li>" for b in bullets or [] if b)
+    lis = "".join(f"<li>{_linkify(b)}</li>" for b in bullets or [] if b)
     return f"<div class='item'>{head}{'<ul>' + lis + '</ul>' if lis else ''}</div>"
 
 
 def html(r, level=0):
     accent = CFG["resume"].get("accent_color", "#1F4E79")
     c = r.get("contact") or {}
-    contact = [c.get("location"), c.get("phone"), c.get("email")] + list(c.get("links") or [])
+    contact = [_e(c.get("location")) if c.get("location") else ""]
+    phone = re.sub(r"[^0-9+]", "", str(c.get("phone") or ""))
+    if phone:
+        contact.append(_link("tel:" + phone, c.get("phone")))
+    email = str(c.get("email") or "").strip()
+    if email:
+        contact.append(_link("mailto:" + quote(email, safe="@+.-_"), email))
     out = [f"<html><head><meta charset='utf-8'><title>{_e(r.get('name'))} Resume</title>"
            f"<style>{_css(accent, level)}</style></head><body>",
            f"<header class='keep'><h1>{_e(r.get('name'))}</h1>"]
     if r.get("headline"):
         out.append(f"<div class='headline'>{_e(r['headline'])}</div>")
-    out.append("<div class='contact'>" + " &nbsp;|&nbsp; ".join(_e(x) for x in contact if x) + "</div></header>")
+    out.append("<div class='contact'>" + " &nbsp;|&nbsp; ".join(x for x in contact if x))
+    out.extend(" &nbsp;|&nbsp; " + _link(url, _contact_link_label(url)) for url in c.get("links") or [] if url)
+    out.append("</div></header>")
 
     if r.get("summary"):
-        out.append(_section("Summary", [f"<p>{_e(r['summary'])}</p>"]))
+        out.append(_section("Summary", [f"<p>{_linkify(r['summary'])}</p>"]))
     if r.get("skills"):
         rows = "".join(f"<div><b>{_e(g.get('category'))}:</b> {_e(', '.join(g.get('items') or []))}</div>"
                        for g in r["skills"])
@@ -104,14 +179,23 @@ def html(r, level=0):
     proj = []
     for p in r.get("projects") or []:
         tech = f" <span class='muted'>({_e(', '.join(p['tech']))})</span>" if p.get("tech") else ""
-        link = f"<div class='dates'>{_e(p['link'])}</div>" if p.get("link") else ""
+        project_links = list(p.get("links") or [])
+        if not project_links and p.get("link", "").lower().startswith(("http://", "https://", "www.")):
+            project_links = [{"url": p["link"], "label": ""}]
+        linked = " &nbsp;|&nbsp; ".join(
+            _link(item.get("url", ""), item.get("label") or "Project link")
+            for item in project_links if item.get("url")
+        )
+        if not linked and p.get("link"):
+            linked = _linkify(p["link"])
+        link = f"<div class='dates'>{linked}</div>" if linked else ""
         head = f"<div class='row'><div><span class='role'>{_e(p.get('name'))}</span>{tech}</div>{link}</div>"
         proj.append(_entry(head, p.get("bullets")))
     out.append(_section("Projects", proj))
 
     edu = []
     for ed in r.get("education") or []:
-        det = f"<div class='muted'>{_e(ed['details'])}</div>" if ed.get("details") else ""
+        det = f"<div class='muted'>{_linkify(ed['details'])}</div>" if ed.get("details") else ""
         edu.append(f"<div class='item'><div class='row'><div><span class='role'>{_e(ed.get('degree'))}</span>"
                    f" &nbsp;|&nbsp; <span class='org'>{_e(ed.get('school'))}</span></div>"
                    f"<div class='dates'>{_dates(ed)}</div></div>{det}</div>")
@@ -120,7 +204,17 @@ def html(r, level=0):
     for key, label in (("certifications", "Certifications"), ("achievements", "Achievements")):
         items = [i for i in r.get(key) or [] if i]
         if items:
-            out.append(_section(label, ["<ul>" + "".join(f"<li>{_e(i)}</li>" for i in items) + "</ul>"], keep_all=True))
+            rows = []
+            for i, item in enumerate(items):
+                links = ([link for link in r.get("certification_links") or []
+                          if link.get("certification") == item or len(items) == 1]
+                         if key == "certifications" else [])
+                urls = " &nbsp;|&nbsp; ".join(
+                    _link(link.get("url", ""), link.get("label") or "Certificate")
+                    for link in links if link.get("url")
+                )
+                rows.append(f"<li>{_linkify(item)}{' &nbsp;|&nbsp; ' + urls if urls else ''}</li>")
+            out.append(_section(label, ["<ul>" + "".join(rows) + "</ul>"], keep_all=True))
     out.append("</body></html>")
     return "\n".join(out)
 

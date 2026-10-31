@@ -1,6 +1,7 @@
 """Profile + job description -> tailored, ATS-friendly, human-sounding resume (dict)."""
 import json
 import re
+from difflib import SequenceMatcher
 
 from . import ai, ats
 from .config import CFG
@@ -11,7 +12,7 @@ RESUME_SCHEMA = """{
   "summary": "",
   "skills": [{"category": "", "items": [""]}],
   "experience": [{"title": "", "company": "", "location": "", "start": "", "end": "", "bullets": [""]}],
-  "projects": [{"name": "", "tech": [""], "link": "", "bullets": [""]}],
+  "projects": [{"name": "", "tech": [""], "link": "", "links": [{"label": "", "url": ""}], "bullets": [""]}],
   "education": [{"degree": "", "school": "", "location": "", "start": "", "end": "", "details": ""}],
   "certifications": [""],
   "achievements": [""]
@@ -213,4 +214,35 @@ def _fix_contact(resume, profile):
     """Contact details always come from the profile/config, never from the model."""
     resume["name"] = profile.get("name") or resume.get("name", "")
     resume["contact"] = {**(resume.get("contact") or {}), **{k: v for k, v in (profile.get("contact") or {}).items() if v}}
+    resume["certification_links"] = [dict(link) for link in profile.get("certification_links") or []]
+    _restore_project_links(resume, profile)
     return resume
+
+
+def _restore_project_links(resume, profile):
+    """Reattach each source project's original URL to its matching tailored project, unchanged."""
+    source = [p for p in profile.get("projects") or [] if p.get("link") or p.get("links")]
+    used = set()
+    for project in resume.get("projects") or []:
+        name = re.sub(r"[^a-z0-9]+", " ", (project.get("name") or "").lower()).strip()
+        if not name:
+            project.pop("link", None)
+            continue
+        candidates = []
+        for i, original in enumerate(source):
+            if i in used:
+                continue
+            original_name = re.sub(r"[^a-z0-9]+", " ", (original.get("name") or "").lower()).strip()
+            if original_name:
+                candidates.append((SequenceMatcher(None, name, original_name).ratio(), i))
+        candidates.sort(reverse=True)
+        if candidates and candidates[0][0] >= 0.82 and (
+            len(candidates) == 1 or candidates[0][0] - candidates[1][0] >= 0.12
+        ):
+            _, idx = candidates[0]
+            original = source[idx]
+            project["link"] = original.get("link", "")
+            project["links"] = [dict(link) for link in original.get("links") or []]
+            used.add(idx)
+        else:
+            project.pop("link", None)

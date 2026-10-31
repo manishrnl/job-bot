@@ -162,13 +162,13 @@ def dump(page, jid, why):
 
 def run_easy_apply(page, m, resume_pdf, cover_letter_pdf, dry_run, log):
     stuck, last_sig = 0, None
-    resume_uploaded = cover_letter_uploaded = cover_letter_field_seen = False
+    resume_uploaded = cover_letter_uploaded = False
     for _ in range(15):
         pause(0.6, 1.2)
-        cover_letter_field_seen |= formfill.has_file_field(m, "cover_letter")
+        cover_field = formfill.has_file_field(m, "cover_letter")
         if not resume_uploaded and not formfill.has_file_field(m, "resume"):
             resume_uploaded |= formfill.upload_via_button(m, "resume", resume_pdf, log=log)
-        if not cover_letter_uploaded and not formfill.has_file_field(m, "cover_letter"):
+        if not cover_letter_uploaded and not cover_field:
             cover_letter_uploaded |= formfill.upload_via_button(m, "cover_letter", cover_letter_pdf, log=log)
         uploaded = {}
         formfill.fill(m, resume_pdf, cover_letter_pdf, log=log, uploaded=uploaded)
@@ -185,9 +185,6 @@ def run_easy_apply(page, m, resume_pdf, cover_letter_pdf, dry_run, log):
         if submit.count() and submit.first.is_visible():
             if not resume_uploaded:
                 log("  [red]LinkedIn still has no confirmed job-specific resume upload; refusing to submit[/]")
-                return "stuck"
-            if cover_letter_field_seen and not cover_letter_uploaded:
-                log("  [red]LinkedIn cover letter upload was not confirmed; refusing to submit[/]")
                 return "stuck"
             if dry_run:
                 log("  [cyan]dry run: reached Submit, discarding[/]")

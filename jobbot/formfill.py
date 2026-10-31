@@ -94,7 +94,7 @@ SCAN_JS = r"""
 NUMERIC_HINT = re.compile(r"how many|years|number of|ctc|salary|notice period|in days|in months|lpa|percentage|cgpa|gpa"
                           r"|rate yourself|out of (5|10)|on a scale", re.I)
 RESUME_HINT = re.compile(r"resume|cv|curriculum", re.I)
-COVER_HINT = re.compile(r"cover|letter", re.I)
+COVER_HINT = re.compile(r"cover\s*letter|covering\s+letter", re.I)
 
 
 def _resume_file_rank(f, files):
@@ -111,7 +111,7 @@ def _resume_file_rank(f, files):
         f.get("name", ""),
         f.get("type", ""),
     ])
-    if re.search(r"cover|letter", hint, re.I):
+    if COVER_HINT.search(hint):
         return -100
     if re.search(r"photo|image|portfolio|video|audio", hint, re.I):
         return -50
