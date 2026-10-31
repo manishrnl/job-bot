@@ -137,7 +137,7 @@ Tailor (3 parallel workers)         recruiter-style rewrite + JD keywords + loca
    ▼  queue
 Easy Apply (one real browser)       upload PDF, answer questions, Next / Review / Submit
    ▼
-data/jobs.db + data/applications.csv   (link, status, ATS score, fit, resume path, time)
+data/jobs.db + data/applications.xlsx (formatted history with clickable job/resume links)
 ```
 
 The browser applies to one job while the next resumes are being written. The pause between
@@ -202,7 +202,7 @@ application moving. AI answers are cached in `data/answers_cache.json`; review a
 | `config.yaml` | Your answers, CTC, preferences | ignored |
 | `data/profile.json` | Your imported profile | ignored |
 | `data/browser_profile/` | The bot's browser, **including your logins** | ignored. Never share it |
-| `data/jobs.db`, `data/applications.csv` | Application history and stats | ignored |
+| `data/jobs.db`, `data/applications.xlsx` | Application history and stats | ignored |
 | `output/` | Generated resumes (`.pdf`, `.txt`, `.html`, `.json`) | ignored |
 
 Clear generated files with `./jb clean`, or start completely fresh with `./jb clean --all`.
@@ -216,8 +216,9 @@ Clear generated files with `./jb clean`, or start completely fresh with `./jb cl
   manual login. Raising them a lot or running all day increases the risk. You use this at your own risk.
 - `use-chrome` copies **all** logins from that Chrome profile into `data/browser_profile/`. A Chrome
   profile used only for job sites is safer.
-- Site markup changes. When a step can't be completed, the application is discarded, never
-  half-submitted. A screenshot and the HTML are saved to `data/debug/` so the selectors can be fixed.
+- Site markup changes. When a step can't be completed, the bot saves a local recovery copy under
+  `data/drafts/` and uses LinkedIn's save-draft action when available. It does not submit or discard
+  an incomplete application. A screenshot and HTML are also saved to `data/debug/` for troubleshooting.
 
 ## Troubleshooting
 

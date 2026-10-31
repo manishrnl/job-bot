@@ -10,6 +10,7 @@ import json
 import random
 import re
 import time
+import datetime
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from .. import answers, ats, coverletter, formfill, render, tailor, tracker
@@ -150,6 +151,55 @@ def discard(page):
     _click(page.locator("button[data-control-name='discard_application_confirm_btn']"))
 
 
+def _form_snapshot(scope):
+    try:
+        return scope.evaluate("""root => Array.from(root.querySelectorAll('input, textarea, select')).map(el => {
+          const labels = Array.from(el.labels || []).map(x => x.innerText).join(' ');
+          return {label: (el.getAttribute('aria-label') || labels || el.name || el.id || '').trim(),
+            type: (el.type || el.tagName || '').toLowerCase(),
+            value: el.tagName === 'SELECT' ? el.selectedOptions?.[0]?.text || '' : (el.value || ''),
+            checked: !!el.checked,
+            files: el.files ? Array.from(el.files).map(f => f.name) : []};
+        }).filter(x => x.label || x.value || x.checked || x.files.length)""")
+    except Exception:
+        return []
+
+
+def save_application_draft(page, scope, job, resume_pdf, cover_pdf, reason):
+    """Save a local recovery copy, then use LinkedIn's native save-draft control if offered."""
+    drafts = DATA / "drafts"
+    drafts.mkdir(exist_ok=True)
+    draft_path = drafts / f"linkedin_{job['id']}.json"
+    snapshot = {
+        "saved_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "job": {k: job.get(k) for k in ("id", "title", "company", "url", "jd")},
+        "resume_pdf": str(resume_pdf),
+        "cover_letter_pdf": str(cover_pdf),
+        "reason": reason,
+        "form_fields": _form_snapshot(scope),
+        "note": "Files are listed by path/name; upload controls may need reattaching when resumed.",
+    }
+    draft_path.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+    save_button = re.compile(r"^(save (?:as )?draft|save (?:and )?(?:exit|close)|save for later)$", re.I)
+    if _click(scope.get_by_role("button", name=save_button)):
+        pause(0.6, 1)
+        console.print("  [green]LinkedIn draft saved.[/]")
+        return "draft_saved", f"LinkedIn draft; local copy: {draft_path}"
+
+    # Dismiss only to reveal LinkedIn's save/discard confirmation. Never click Discard.
+    dismissed = _click(scope.locator("button[aria-label='Dismiss'], button[aria-label*='close' i]"))
+    if dismissed:
+        pause(0.6, 1)
+        prompt_save = page.get_by_role("button", name=re.compile(r"^(save|save draft|save as draft|save and exit|save for later)$", re.I))
+        if _click(prompt_save):
+            pause(0.6, 1)
+            console.print("  [green]LinkedIn draft saved.[/]")
+            return "draft_saved", f"LinkedIn draft; local copy: {draft_path}"
+
+    console.print(f"  [yellow]No LinkedIn save-draft option appeared. Local recovery copy saved: {draft_path}[/]")
+    return "draft_local", f"local recovery copy: {draft_path}"
+
+
 def dump(page, jid, why):
     DEBUG.mkdir(exist_ok=True)
     try:
@@ -244,10 +294,13 @@ def apply_job(pw, page, profile, job, dry_run):
     if m is None:
         dump(page, job["id"], "apply form not found")
         return "error", "apply form not found"
-    status = run_easy_apply(page, m, pdf, cover_pdf, dry_run, console.print)
+    try:
+        status = run_easy_apply(page, m, pdf, cover_pdf, dry_run, console.print)
+    except Exception as e:
+        return save_application_draft(page, m, job, pdf, cover_pdf, str(e).splitlines()[0][:250])
     if status == "stuck":
         dump(page, job["id"], "stuck")
-        discard(page)
+        return save_application_draft(page, m, job, pdf, cover_pdf, "form could not be completed")
     return status, ""
 
 
@@ -272,6 +325,7 @@ def apply(pw, page, profile, keywords, location, limit, dry_run=False):
             pending.add(pool.submit(prepare, profile, job))
 
     t0 = time.time()
+    stop_after_draft = False
     refill()
     try:
         while pending and done < limit:
@@ -308,12 +362,18 @@ def apply(pw, page, profile, keywords, location, limit, dry_run=False):
                 report_table(rep, job.get("pdf"))
                 tracker.record(*rec, status, rep["score"], job.get("pdf", ""), note, fit=job["fit"])
                 tally[status] = tally.get(status, 0) + 1
-                color = {"applied": "green", "dry_run": "cyan"}.get(status, "red")
+                color = {"applied": "green", "dry_run": "cyan", "draft_saved": "yellow", "draft_local": "yellow"}.get(status, "red")
                 console.print(f"  => [bold {color}]{status}[/] {note}")
+                if status in ("draft_saved", "draft_local"):
+                    stop_after_draft = True
+                    console.print("  [dim]Stopping this run so the incomplete application is not navigated away from.[/]")
+                    break
                 if status in ("applied", "dry_run"):
                     done += 1
                     next_ok = time.time() + random.uniform(lo, hi)
                     console.print(f"  [dim]{done}/{limit} done[/]")
+            if stop_after_draft:
+                break
             refill()
     finally:
         pool.shutdown(wait=False, cancel_futures=True)

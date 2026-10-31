@@ -115,27 +115,38 @@ PROFILE (the only source of truth):
 
 
 def experience_gate(profile, jd):
-    """Reject jobs that require more than 2 years of experience for a 0-year candidate."""
+    """Reject roles with a strict 2+ year minimum for this fresher profile."""
     text = compact_jd(jd, 4000).lower()
     if not text:
         return 100, "freshers/0-2y"
 
-    fresher_like = re.search(r"\b(freshers?|entry level|graduate|0\s*years?|0\s*[-to]+\s*2\s*years?|up to\s*2\s*years?)\b", text)
+    minimums = []
+    ranges = list(re.finditer(r"\b(\d+)\s*(?:-|to)\s*(\d+)\s*(?:years?|yrs?)\b", text))
+    for match in ranges:
+        low = int(match.group(1))
+        if low >= 2:
+            minimums.append(low)
+    text_without_ranges = re.sub(r"\b\d+\s*(?:-|to)\s*\d+\s*(?:years?|yrs?)\b", " ", text)
 
-    if re.search(r"\b(?:5|6|7|8|9|10|[1-9]\d+)\s*\+\s*years?\b|\b(?:5|6|7|8|9|10|[1-9]\d+)\s*years?\s*(?:minimum|required|and\s*above)\b|\b(?:minimum|min)\s*(?:5|6|7|8|9|10|[1-9]\d+)\s*years?\b", text):
-        if fresher_like:
-            return 100, "freshers/0-2y"
-        return 0, "requires 5+ years"
-    if re.search(r"\b(?:3|4)\s*\+\s*years?\b|\b(?:3|4)\s*years?\s*(?:minimum|required|and\s*above)\b|\b(?:minimum|min)\s*(?:3|4)\s*years?\b", text):
-        if fresher_like:
-            return 100, "freshers/0-2y"
-        return 0, "requires 3+ years"
-    if re.search(r"\b(?:2)\s*\+\s*years?\b|\b(?:2)\s*years?\s*(?:minimum|required)\b", text):
-        if fresher_like:
-            return 100, "freshers/0-2y"
-        return 0, "requires 2+ years"
-    if fresher_like:
-        return 100, "freshers/0-2y"
+    patterns = (
+        r"\b(\d+)\s*\+\s*(?:years?|yrs?)\b",
+        r"\b(?:minimum|min(?:imum)?\s+of|at least)\s*(\d+)\s*(?:years?|yrs?)\b",
+        r"\b(\d+)\s*(?:years?|yrs?)\s*(?:minimum|required|and above|or more|at least)\b",
+        r"\b(\d+)\s*(?:years?|yrs?)\s*(?:of\s+)?(?:work\s+|professional\s+|industry\s+)?experience\b",
+        r"\b(?:must have|requires?|requiring)\s*(?:at least\s*)?(\d+)\s*(?:years?|yrs?)\b",
+    )
+    optional = re.compile(r"\b(preferred|desirable|nice to have|bonus|a plus)\b", re.I)
+    required = re.compile(r"\b(required|must have|minimum|at least|mandatory)\b", re.I)
+    for pattern in patterns:
+        for match in re.finditer(pattern, text_without_ranges):
+            context = text_without_ranges[max(0, match.start() - 35):match.end() + 50]
+            if optional.search(context) and not required.search(context):
+                continue
+            minimums.append(int(match.group(1)))
+
+    if minimums and max(minimums) >= 2:
+        years = max(minimums)
+        return 0, f"requires {years}+ years"
     return 100, "freshers/0-2y"
 
 

@@ -19,3 +19,4 @@ Thumbs.db
 # Anything else that might hold a profile or resume
 *.pdf
 !docs/*.pdf
+*.xlsx

@@ -63,6 +63,10 @@ META = re.compile(r"not a (form )?question|can.?t answer|cannot answer|unable to
 # Logistics/preference questions: the "general choice" that keeps the application moving.
 AGREEABLE = re.compile(r"comfortable|willing|open to|relocat|commute|on-?site|office|shift|join within|"
                        r"available|agree|consent|okay with|ok with|fine with|budget|ctc range|background check", re.I)
+EXPERIENCE_QUESTION = re.compile(
+    r"\bexperience\b|\bhow many years\b|\bhow long have you\b|"
+    r"\byears?\s+(?:of\s+(?:work|professional|industry)|working|worked|with|in|using)\b", re.I)
+ZERO_EXPERIENCE_OPTION = re.compile(r"\b0(?:\.0)?\b|no experience|none|never|less than 1 year|under 1 year|fresher|entry level", re.I)
 
 
 def _ctc_units(q, value):
@@ -92,12 +96,39 @@ def default_answer(question, options, numeric):
     return "0" if numeric else ""
 
 
+def _fresher_experience_answer(options):
+    """Return zero experience, choosing an equivalent option when the form restricts the choices."""
+    if not options:
+        return "0"
+    zero = next((o for o in options if ZERO_EXPERIENCE_OPTION.search(o)), None)
+    if zero:
+        return zero
+    # If the form only offers Yes/No, zero experience is represented by No.
+    no = next((o for o in options if o.strip().lower() in ("no", "n", "false")), None)
+    if no:
+        return no
+    numeric_options = []
+    for option in options:
+        nums = re.findall(r"\d+(?:\.\d+)?", option.replace(",", ""))
+        if nums:
+            numeric_options.append((min(float(n) for n in nums), option))
+    if numeric_options:
+        return min(numeric_options, key=lambda item: item[0])[1]
+    return options[0]
+
+
 def answer(question, options=None, numeric=False, long=False):
     q = " ".join(question.lower().split())
     options = [o for o in (options or []) if o]
+
+    # This rule runs before contact/config answers, cache lookup, and AI so a past
+    # "Yes, 5 years" answer can never be reused for this fresher profile.
+    if EXPERIENCE_QUESTION.search(q):
+        return _fresher_experience_answer(options)
+
     ans = _contact(q) if not options else None
 
-    # "years of experience with Django" is skill-specific: let the AI count it from the profile.
+    # Other questions can still be tailored to the profile; experience questions return above.
     skill_specific = (re.search(r"\bexperience\b.*\b(with|in|using|on)\b", q)
                       and not re.search(r"\b(total|overall|industry|it industry|relevant)\b", q))
     if ans is None:

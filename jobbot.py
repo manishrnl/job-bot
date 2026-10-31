@@ -279,7 +279,8 @@ def cmd_clean(a):
                (DATA / "debug", "debug screenshots", True),
                (DATA / "answers_cache.json", "cached form answers", True),
                (DATA / "jobs.db", "application history + stats", a.all or a.history),
-               (DATA / "applications.csv", "history CSV", a.all or a.history),
+               (DATA / "applications.xlsx", "Excel application history", a.all or a.history),
+               (DATA / "applications.csv", "legacy CSV history", a.all or a.history),
                (PROFILE_PATH, "imported profile", a.all),
                (BROWSER_DIR, "saved browser login", a.all or a.logout)]
     chosen = [(p, label) for p, label, on in targets if on and p.exists()]
@@ -313,7 +314,7 @@ def cmd_stats(a):
         for day, n in s["per_day"]:
             d.add_row(day, "█" * min(n, 40) + f" {n}")
         console.print(d)
-    console.print(f"[dim]Full log with links, scores and resume paths: {tracker.DATA / 'applications.csv'}[/]")
+    console.print(f"[dim]Formatted application workbook: {tracker.DATA / 'applications.xlsx'}[/]")
 
 
 def menu():
