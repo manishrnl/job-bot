@@ -11,29 +11,29 @@ You give it your LinkedIn profile PDF once. For each matching job it:
 5. opens Easy Apply in a real browser, uploads that PDF, answers the questions and submits,
 6. logs every job with its link, ATS score and status so you can see your stats.
 
-No API keys, and no paid API calls. The AI runs through an AI CLI you're already logged into (see below).
+AI calls use the backend selected in `config.yaml`. This workspace uses its configured AICredits API model for every request.
 
 > **Read [Risks](#risks) before running it live.** Automating LinkedIn breaks its Terms of Service.
 
 ---
 
-## Supported AI backends
+## AI backends
 
-jobbot calls an AI command-line tool you have already logged into. It needs at least one of these:
+Use the API backend for this setup, or select a CLI backend if you have configured one:
 
 | Backend | Cost | Install | Log in once |
 |---|---|---|---|
-| **Claude Code** (recommended, best writing) | Uses your Claude Pro/Max plan | `npm install -g @anthropic-ai/claude-code` | run `claude` and follow the login |
-| **Gemini CLI** | Free tier with a Google account | `npm install -g @google/gemini-cli` | run `gemini` and pick "Login with Google" |
+| **AICredits API** | Usage-based | Set `ai.api_key` and `ai.api_base` in `config.yaml` | Not needed |
+| **Claude Code** | Uses your Claude plan | `npm install -g @anthropic-ai/claude-code` | run `claude` and follow the login |
+| **Gemini CLI** | Uses your Google account | `npm install -g @google/gemini-cli` | run `gemini` and pick "Login with Google" |
 | **Codex CLI** | Uses your ChatGPT plan | `npm install -g @openai/codex` | `codex login` |
-| **Ollama** (fully offline, free) | Free, runs on your machine | [ollama.com/download](https://ollama.com/download), then `ollama pull llama3.1` | not needed |
+| **Ollama** | Local runtime | [ollama.com/download](https://ollama.com/download) | not needed |
 
 With `backend: auto` in `config.yaml`, jobbot uses the first one it finds, in this order:
 claude, gemini, codex, ollama. To force one, set `ai.backend: gemini` (or `claude`, `codex`, `ollama`).
 
-With Claude, the long writing uses `ai.claude_model` (default `sonnet`) and quick tasks use
-`ai.claude_fast_model` (default `haiku`). Small local Ollama models write noticeably weaker resumes.
-Use `llama3.1:70b` or `qwen2.5:32b` if your machine can run them.
+In API mode, all calls, including fast tasks, use the single `ai.api_model` value from `config.yaml`.
+There is no second fast-model setting or built-in API model fallback.
 
 ---
 
@@ -67,9 +67,7 @@ On Windows, use `.\jb` (it runs `jb.cmd`) wherever this README says `./jb`.
 # 1. LinkedIn > your profile > More > Save to PDF. Then:
 .\jb init ~/Downloads/Profile.pdf          # add an old resume too: ./jb init Profile.pdf old_cv.pdf
                                            # it asks for anything the PDF lacks (phone, CTC, projects...)
-# If Ollama times out during PDF extraction, use a smaller/faster model or switch to Claude/Gemini:
-#   ollama pull llama3.1
-#   # or edit config.yaml: ai.backend: claude   / ai.ollama_model: llama3.1
+# If a configured local CLI runtime times out during PDF extraction, choose a smaller local model or use the API backend.
 
 # 2. Check data/profile.json and config.yaml (CTC in LPA, notice period, job titles, location)
 

@@ -1,7 +1,6 @@
-"""AI calls through CLIs you already have logged in (Claude Code, Gemini CLI, Codex CLI, Ollama).
+"""AI calls through the configured API or a configured CLI backend.
 
-No API keys and no paid API: each call shells out to the CLI, which uses your own
-subscription / free tier / local model.
+API requests always use the single model named by ``ai.api_model`` in config.yaml.
 """
 import json
 import os
@@ -22,10 +21,13 @@ def _api_cfg():
     api_key = ai.get("api_key") or os.getenv("AI_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         return None
+    api_model = str(ai.get("api_model") or "").strip()
+    if not api_model:
+        raise SystemExit("Set ai.api_model in config.yaml; API requests do not choose a model automatically.")
     return {
         "api_key": api_key,
         "api_base": (ai.get("api_base") or os.getenv("AI_API_BASE") or "https://api.openai.com/v1").rstrip("/"),
-        "api_model": ai.get("api_model") or os.getenv("AI_API_MODEL") or "gpt-4o-mini",
+        "api_model": api_model,
     }
 
 
@@ -68,8 +70,9 @@ def _command(name, prompt, fast=False):
         argv = ["claude", "-p", "--output-format", "text", "--strict-mcp-config",
                 "--disable-slash-commands", "--setting-sources", ""]
         model = ai.get("claude_fast_model") if fast else ai.get("claude_model")
-        if model:
-            argv += ["--model", model]
+        if not model:
+            raise SystemExit("Set the Claude model in config.yaml before selecting the Claude CLI backend.")
+        argv += ["--model", model]
         return argv, prompt
     if name == "gemini":
         return ["gemini", "-p", prompt], None
@@ -79,11 +82,14 @@ def _command(name, prompt, fast=False):
         # Ollama's non-interactive CLI expects the prompt as a positional argument,
         # not as stdin. Passing it via stdin triggers the interactive TUI and the
         # spinner output seen in the traceback.
-        return ["ollama", "run", ai.get("ollama_model", "llama3.1"), prompt], None
+        model = ai.get("ollama_model")
+        if not model:
+            raise SystemExit("Set ai.ollama_model in config.yaml before selecting the Ollama backend.")
+        return ["ollama", "run", model, prompt], None
     raise SystemExit(f"Unknown AI backend: {name}")
 
 
-def _ask_api(prompt, fast=False):
+def _ask_api(prompt):
     cfg = _api_cfg()
     if cfg is None:
         raise SystemExit("No API credentials found. Set ai.api_key and ai.api_base in config.yaml (or AI_API_KEY / AI_API_BASE).")
@@ -115,10 +121,10 @@ def _ask_api(prompt, fast=False):
 
 
 def ask(prompt, fast=False):
-    """fast=True uses the small model (form answers, keyword lists)."""
+    """Send a prompt; the API backend uses ai.api_model for every call."""
     name = backend()
     if name == "api":
-        return _ask_api(prompt, fast)
+        return _ask_api(prompt)
     argv, stdin = _command(name, prompt, fast)
     argv[0] = shutil.which(argv[0]) or argv[0]  # Windows: npm installs claude.cmd / gemini.cmd
     model = argv[2] if name == "ollama" and len(argv) > 2 else None
@@ -129,10 +135,10 @@ def ask(prompt, fast=False):
                                timeout=CFG["ai"].get("timeout", 300), cwd=cwd)
         except subprocess.TimeoutExpired:
             if name == "ollama":
-                model_name = model or CFG["ai"].get("ollama_model", "llama3.1")
+                model_name = model or CFG["ai"].get("ollama_model", "configured local model")
                 raise SystemExit(
                     f"Ollama timed out while running '{model_name}'. This is common on Windows with large models. "
-                    "Install a smaller/faster local model or switch backends. Try: 'ollama pull llama3.1' "
+                    "Install a local model and set ai.ollama_model, or switch backends. "
                     "or set ai.backend to 'claude', 'gemini', or 'codex' in config.yaml."
                 )
             raise RuntimeError(f"{name} timed out")

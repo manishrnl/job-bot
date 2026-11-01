@@ -7,10 +7,7 @@ ai:
   backend: api
   api_key: ""              # e.g. your token from https://aicredits.in/dashboard
   api_base: "https://api.aicredits.in/v1"  # OpenAI-compatible base URL
-  api_model: "gemini-2.5-flash-lite" # cheapest Gemini family model where available
-  claude_model: sonnet      # resume writing ("opus" = best but slower)
-  claude_fast_model: haiku  # form answers, keyword lists
-  ollama_model: llama3.1
+  api_model: "google/gemini-2.5-flash-lite" # used for every API call, including fast tasks
   timeout: 300
 
 # LinkedIn's PDF export often lacks phone etc. Anything set here overrides the profile.

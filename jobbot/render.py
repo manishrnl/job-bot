@@ -206,14 +206,19 @@ def html(r, level=0):
         if items:
             rows = []
             for i, item in enumerate(items):
-                links = ([link for link in r.get("certification_links") or []
-                          if link.get("certification") == item or len(items) == 1]
-                         if key == "certifications" else [])
-                urls = " &nbsp;|&nbsp; ".join(
-                    _link(link.get("url", ""), link.get("label") or "Certificate")
-                    for link in links if link.get("url")
-                )
-                rows.append(f"<li>{_linkify(item)}{' &nbsp;|&nbsp; ' + urls if urls else ''}</li>")
+                if key == "certifications":
+                    heading, _, detail = str(item).partition("\n")
+                    links = [link for link in r.get("certification_links") or []
+                             if (link.get("certification") and
+                                 (link.get("certification") == heading or link["certification"] in heading))
+                             or len(items) == 1]
+                    certificate = next((link for link in links
+                                        if link.get("label", "").lower() == "certificate" and link.get("url")), None)
+                    view_link = f" &nbsp;|&nbsp; {_link(certificate['url'], 'View Certificate')}" if certificate else ""
+                    detail_html = f"<div class='muted'>{_linkify(detail)}</div>" if detail else ""
+                    rows.append(f"<li>{_linkify(heading)}{view_link}{detail_html}</li>")
+                else:
+                    rows.append(f"<li>{_linkify(item)}</li>")
             out.append(_section(label, ["<ul>" + "".join(rows) + "</ul>"], keep_all=True))
     out.append("</body></html>")
     return "\n".join(out)

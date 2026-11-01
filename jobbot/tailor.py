@@ -35,6 +35,7 @@ IMPACT:
 - Summary: 2-3 sentences, no "I", states years of experience, core stack and one standout result.
   Compute years from full-time roles' dates and round DOWN ("3+ years"); internships don't count.
 - Skills: 3-6 categories, JD-relevant first, max ~25 items total.
+- Certifications: use PROFILE.certification_details for the verified course focus and stack; put JD-relevant covered tools first.
 LENGTH BUDGET (hard limits; the PDF is A4 and must not spill a few lines onto an extra page):
 - Target: {CFG['resume'].get('pages', 'auto')} page(s) (auto = exactly ONE page under 7 years of experience, else max 2).
 - One page = at most ~430 words in total: summary <= 50 words, skills <= 5 lines,
@@ -95,6 +96,7 @@ PROFILE (the only source of truth):
     must = res.get("keywords", {}).get("must", [])
     nice = res.get("keywords", {}).get("nice", [])
     resume = _fix_contact(res["resume"], profile)
+    _set_certifications(resume, profile, jd)
     report = ats.score(resume, must, nice)
 
     # One refinement pass if needed: fold in missing keywords the profile supports, strip AI tells.
@@ -105,6 +107,7 @@ PROFILE (the only source of truth):
             break
         report["fixable"] = fixable
         cand = _refine(resume, profile, jd, report)
+        _set_certifications(cand, profile, jd)
         new = ats.score(cand, must, nice)
         if new["score"] < report["score"] and len(new["ai_tells"]) >= len(report["ai_tells"]):
             break  # refinement made it worse; keep the previous version
@@ -193,9 +196,11 @@ PROFILE (the only source of truth):
 {_j(profile)}"""
     res = ai.ask_json(prompt)
     resume = _fix_contact(res["resume"], profile)
+    _set_certifications(resume, profile, role)
     report = ats.score(resume, res.get("keywords", []))
     if report["ai_tells"]:
         resume = _refine(resume, profile, "", report)
+        _set_certifications(resume, profile, role)
         report = ats.score(resume, res.get("keywords", []))
     report["must"], report["nice"], report["gaps"] = res.get("keywords", []), [], []
     return resume, report
@@ -228,6 +233,49 @@ def _fix_contact(resume, profile):
     resume["certification_links"] = [dict(link) for link in profile.get("certification_links") or []]
     _restore_project_links(resume, profile)
     return resume
+
+
+def _set_certifications(resume, profile, jd=""):
+    """Add verified certificate focus and stack, ordered by relevance to the job."""
+    certificates = profile.get("certifications") or []
+    details = profile.get("certification_details") or []
+    jd_lower = (jd or "").lower()
+
+    def mention_position(topic):
+        base = str(topic).split(" (")[0]
+        aliases = [str(topic), base]
+        if base.lower().startswith("apache kafka"):
+            aliases.append("Kafka")
+        if base.lower().startswith("spring cloud microservices"):
+            aliases.extend(("Spring Cloud", "Microservices"))
+        if base.lower().startswith("ci/cd"):
+            aliases.append("CI/CD")
+        found = [jd_lower.find(alias.lower()) for alias in aliases
+                 if alias and jd_lower.find(alias.lower()) >= 0]
+        return min(found) if found else -1
+
+    lines = []
+    for cert in certificates[:3]:
+        cert_name = str(cert.get("name", "")) if isinstance(cert, dict) else str(cert)
+        detail = next((item for item in details
+                       if item.get("certification", "").lower() == cert_name.lower()), {})
+        stack = list(detail.get("core_stack") or [])
+        stack = [item for _, item in sorted(
+            enumerate(stack),
+            key=lambda pair: (mention_position(pair[1]) < 0,
+                              mention_position(pair[1]) if mention_position(pair[1]) >= 0
+                              else len(jd_lower) + pair[0]),
+        )]
+        provider = detail.get("provider") or ""
+        heading = cert_name + (f", {provider}" if provider and provider.lower() not in cert_name.lower() else "")
+        detail_parts = []
+        if detail.get("focus"):
+            detail_parts.append(f"Focus: {detail['focus']}")
+        if stack:
+            detail_parts.append("Core stack: " + ", ".join(stack))
+        lines.append(heading + ("\n" + " | ".join(detail_parts) if detail_parts else ""))
+    if lines:
+        resume["certifications"] = lines
 
 
 def _restore_project_links(resume, profile):

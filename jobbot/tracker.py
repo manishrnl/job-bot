@@ -60,13 +60,27 @@ def stats():
 def export_excel():
     """Rebuild the readable application workbook from SQLite history."""
     from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.formatting.rule import CellIsRule, FormulaRule
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.formatting.rule import FormulaRule
+    from openpyxl.worksheet.table import Table, TableStyleInfo
 
     path = DATA / "applications.xlsx"
     wb = Workbook()
     ws = wb.active
     ws.title = "Applications"
+    band_fill = PatternFill("solid", fgColor="EAF2F8")
+    status_cell_styles = {
+        "Applied": ("E2F0D9", "006100"),
+        "Error": ("FCE4D6", "9C0006"),
+        "Stuck": ("FCE4D6", "9C0006"),
+        "Draft-Saved": ("DDEBF7", "1F4E78"),
+        "Draft-Local": ("DDEBF7", "1F4E78"),
+        "Dry-Run": ("DDEBF7", "1F4E78"),
+        "Low-Fit": ("FFF2CC", "9C6500"),
+        "Low-Match": ("FFF2CC", "9C6500"),
+        "Excluded": ("E7E6E6", "666666"),
+        "External": ("DDEBF7", "1F4E78"),
+    }
     headers = ["Date", "Status", "ATS score", "Fit", "Job title", "Company",
                "LinkedIn job", "Resume PDF", "Note"]
     ws.append(headers)
@@ -74,19 +88,26 @@ def export_excel():
     for cell in ws[1]:
         cell.fill = header_fill
         cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        cell.alignment = Alignment(vertical="center")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = Border(
+            left=Side(style="medium", color="FFFFFF") if cell.column > 1 else Side(),
+            right=Side(style="medium", color="FFFFFF"),
+            bottom=Side(style="medium", color="FFFFFF"),
+        )
 
     rows = _db.execute(f"SELECT {','.join(COLS)} FROM jobs ORDER BY at DESC").fetchall()
     for row in rows:
         record = dict(zip(COLS, row))
-        ws.append([record["at"], record["status"], record["score"] or "-", record["fit"] or "-",
+        status_label = str(record["status"] or "").replace("_", "-").title()
+        ws.append([record["at"], status_label, record["score"] or "-", record["fit"] or "-",
                    record["title"], record["company"], record["url"] or "N/A",
                    record["resume"] or "N/A", record["note"] or "N/A"])
         n = ws.max_row
         try:
             from datetime import datetime
             ws.cell(n, 1).value = datetime.fromisoformat(record["at"])
-            ws.cell(n, 1).number_format = "yyyy-mm-dd hh:mm"
+            ws.cell(n, 1).number_format = "ddd, mmm dd, yyyy, hh:mm"
+            ws.cell(n, 1).font = Font(name="Calibri", size=11, bold=True, color="002060")
         except (TypeError, ValueError):
             pass
         title_cell = ws.cell(n, 5)
@@ -112,61 +133,110 @@ def export_excel():
             resume_cell.font = Font(name="Calibri", size=11, color="008000", underline="single")
 
         for col in (2, 3, 4, 6, 7, 8):
-            ws.cell(n, col).alignment = Alignment(vertical="top", wrap_text=col in (7, 8))
-        ws.cell(n, 9).alignment = Alignment(vertical="top", wrap_text=True)
+            ws.cell(n, col).alignment = Alignment(horizontal="center", vertical="center", wrap_text=col in (7, 8))
+        ws.cell(n, 5).alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws.cell(n, 9).alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for col in range(1, 10):
+            cell = ws.cell(n, col)
+            if n % 2 == 1:
+                cell.fill = band_fill
+            cell.border = Border(
+                left=Side(style="medium", color="FFFFFF") if col > 1 else Side(),
+                right=Side(style="medium", color="FFFFFF"),
+                top=Side(style="medium", color="FFFFFF"),
+                bottom=Side(style="medium", color="FFFFFF"),
+            )
+            if cell.value in ("-", "N/A"):
+                cell.font = Font(name="Calibri", size=11, bold=True, color="002060")
+        # Apply score colors directly so they display in viewers that do not
+        # evaluate conditional formatting; the rules below cover future edits.
+        score_colors = (
+            (90, "E2F0D9", "006100"),
+            (80, "C6E0B4", "375623"),
+            (70, "FFF2CC", "9C6500"),
+            (None, "FCE4D6", "9C0006"),
+        )
+        for col in (3, 4):
+            cell = ws.cell(n, col)
+            score = cell.value
+            if isinstance(score, (int, float)):
+                if score > 90:
+                    fill_color, font_color = score_colors[0][1:]
+                elif score >= 80:
+                    fill_color, font_color = score_colors[1][1:]
+                elif score >= 70:
+                    fill_color, font_color = score_colors[2][1:]
+                else:
+                    fill_color, font_color = score_colors[3][1:]
+                cell.fill = PatternFill("solid", fgColor="FF" + fill_color)
+                cell.font = Font(name="Calibri", size=11, bold=True, color="FF" + font_color)
+        status_cell = ws.cell(n, 2)
+        if status_cell.value in status_cell_styles:
+            fill_color, font_color = status_cell_styles[status_cell.value]
+            status_cell.fill = PatternFill("solid", fgColor="FF" + fill_color)
+            status_cell.font = Font(name="Calibri", size=11, bold=True, color="FF" + font_color)
         ws.row_dimensions[n].height = 24
 
     last_row = ws.max_row
     if last_row >= 2:
-        # ATS score bands: strong (>70), moderate (50–70), weak (<50).
-        ws.conditional_formatting.add(
-            f"C2:C{last_row}",
-            CellIsRule(operator="greaterThan", formula=["70"],
-                       fill=PatternFill("solid", fgColor="E2F0D9"),
-                       font=Font(color="006100")),
-        )
-        ws.conditional_formatting.add(
-            f"C2:C{last_row}",
-            CellIsRule(operator="between", formula=["50", "70"],
-                       fill=PatternFill("solid", fgColor="FFF2CC"),
-                       font=Font(color="9C6500")),
-        )
-        ws.conditional_formatting.add(
-            f"C2:C{last_row}",
-            CellIsRule(operator="lessThan", formula=["50"],
-                       fill=PatternFill("solid", fgColor="FCE4D6"),
-                       font=Font(color="9C0006")),
-        )
+        # Color ATS and fit scores using the same four score bands.
+        score_styles = [
+            (">90", "E2F0D9", "006100"),
+            ("80-90", "C6E0B4", "375623"),
+            ("70-80", "FFF2CC", "9C6500"),
+            ("<70", "FCE4D6", "9C0006"),
+        ]
+        for column in ("C", "D"):
+            score_range = f"{column}2:{column}{last_row}"
+            for band, fill_color, font_color in score_styles:
+                if band == ">90":
+                    formula = [f"AND(ISNUMBER({column}2),{column}2>90)"]
+                elif band == "80-90":
+                    formula = [f"AND(ISNUMBER({column}2),{column}2>=80,{column}2<=90)"]
+                elif band == "70-80":
+                    formula = [f"AND(ISNUMBER({column}2),{column}2>=70,{column}2<80)"]
+                else:
+                    formula = [f"AND(ISNUMBER({column}2),{column}2<70)"]
+                ws.conditional_formatting.add(
+                    score_range,
+                    FormulaRule(formula=formula,
+                                fill=PatternFill("solid", fgColor=fill_color),
+                                font=Font(color=font_color, bold=True)),
+                )
 
         # Color by status so the state is easy to scan down the sheet.
         status_styles = {
-            "Applied": ("E2F0D9", "006100"),
-            "Error": ("FCE4D6", "9C0006"),
-            "Stuck": ("FCE4D6", "9C0006"),
-            "Draft-Saved": ("DDEBF7", "1F4E78"),
-            "Draft-Local": ("DDEBF7", "1F4E78"),
-            "Low-Fit": ("FFF2CC", "9C6500"),
-            "Low-Match": ("FFF2CC", "9C6500"),
-            "Excluded": ("E7E6E6", "666666"),
-            "External": ("DDEBF7", "1F4E78"),
+            "applied": ("E2F0D9", "006100"),
+            "error": ("FCE4D6", "9C0006"),
+            "stuck": ("FCE4D6", "9C0006"),
+            "draft_saved": ("DDEBF7", "1F4E78"),
+            "draft_local": ("DDEBF7", "1F4E78"),
+            "dry_run": ("DDEBF7", "1F4E78"),
+            "low_fit": ("FFF2CC", "9C6500"),
+            "low_match": ("FFF2CC", "9C6500"),
+            "excluded": ("E7E6E6", "666666"),
+            "external": ("DDEBF7", "1F4E78"),
         }
         for status, (fill_color, font_color) in status_styles.items():
             ws.conditional_formatting.add(
                 f"B2:B{last_row}",
                 FormulaRule(
-                    formula=[f'$B2="{status}"'],
+                    formula=[f'$B2="{status.replace("_", "-").title()}"'],
                     fill=PatternFill("solid", fgColor=fill_color),
                     font=Font(color=font_color, bold=True),
                 ),
             )
 
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = ws.dimensions
+    ws.freeze_panes = "B2"
     ws.sheet_view.showGridLines = False
     ws.row_dimensions[1].height = 26
     for column, width in {"A": 19, "B": 16, "C": 11, "D": 10, "E": 34,
-                          "F": 26, "G": 44, "H": 16, "I": 42}.items():
+                          "F": 26, "G": 44, "H": 44.55, "I": 30.22}.items():
         ws.column_dimensions[column].width = width
+    table = Table(displayName="Table1", ref=f"A1:I{ws.max_row}")
+    table.tableStyleInfo = TableStyleInfo(name="TableStyleLight2", showRowStripes=True,
+                                          showColumnStripes=False)
+    ws.add_table(table)
     try:
         wb.save(path)
     except PermissionError:
